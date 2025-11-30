@@ -70,7 +70,7 @@ and will be overwritten. Continue?"
 
 And at the bottom of the GUI there's a **progress bar** which shows the finished seed amount and searching speed.
 
-## **Dependent Library**
+## **Libraries mainly used in this program**
 
 https://github.com/KalleStruik/noise-sampler
 
