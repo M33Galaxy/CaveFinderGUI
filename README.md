@@ -20,6 +20,8 @@ You can change the -Xms2048m -Xmx4096m to the memory amount you want. But I sugg
 
 ## **How to use?**
 
+Use the **Start Filtering** button to start filtering, and **Stop** Button to stop filtering.
+
 The top-left part is **Parameter Settings**, including:
 
 **Cave Depth**: The cave depth you want, default is -50, range is from -50 to 0.
@@ -57,6 +59,27 @@ The Bottom-left part is **Seed Input**.
 The top-right part is **Biome Climate Parameters**.
 
 It includes 8 types. **Temperature, Humidity, Erosion, Ridge(Weirdness), Continentalness** determines the biome. It's better to add these climate parameters if you want to search an exposed cave in specific biome. They are searching in order of fastest to slowest in the program (Temperature, Humidity, Erosion and Ridge(Weirdness) are faster than cave entrance checking, though erosion and weirdness are still slower than entrance1). You can search on the Minecraft Wiki to look for the biome climate parameter condition for the biome you need. Structures' generation also determines on 
-biomes.
+biomes. Weirdness betweeen -0.05 and 0.05 mostly means rivers, Continentalness below -0.19 means ocean, for better avoiding waterlogged caves I set the default excluding weirdness to between -0.16 and 0.16, and default excluding continalness to below -0.11.
 
-**Entrance, Cheese and AquiferFloodlevelFloodness** aren't Biome Climate Parameters, but they are still here for advanced searching. Normally, Entrance and Cheese <0 means caves, and 99% non-waterlogged exposed caves generates at AquiferFloodlevelFloodness <0.4. Lower Entrance and Cheese might means larger caves.
+**Entrance, Cheese and AquiferFloodlevelFloodness** aren't Biome Climate Parameters, but they are still here for advanced searching. Normally, Entrance and Cheese <0 means caves, and 99% non-waterlogged exposed caves generates at AquiferFloodlevelFloodness below 0.4. Lower Entrance and Cheese might means larger caves, and lower AquiferFloodlevelFloodness might means less chance to get waterlogged caves.
+
+The bottom-right part is the **log**, which shows information while searching.
+
+Below these parts, you can see an **Export Path**, which is the filtered list you want to export to. If that list already exists, the program will show a warning to you: "Result file already exists 
+and will be overwritten. Continue?" 
+
+And at the bottom of the GUI there's a **progress bar** which shows the finished seed amount and searching speed.
+
+## **Dependent Library**
+
+https://github.com/KalleStruik/noise-sampler
+
+https://github.com/jellejurre/seed-checker/tree/1.18.1
+
+## Credits
+
+https://github.com/SunnySlopes
+
+https://github.com/jellejurre
+
+https://github.com/KalleStruik
