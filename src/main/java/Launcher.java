@@ -6,15 +6,15 @@ public class Launcher {
     public static void main(String[] args) {
         try {
             Class.forName("net.minecraft.SharedConstants");
-            System.out.println("SharedConstants 预加载成功");
+            System.out.println("SharedConstants preload successfully");
         } catch (Exception e) {
-            System.err.println("SharedConstants 预加载失败: " + e.getMessage());
+            System.err.println("SharedConstants preload failed: " + e.getMessage());
         }
         try {
             Class.forName("nl.jellejurre.seedchecker.SeedCheckerSettings");
-            System.out.println("SeedCheckerSettings 预加载成功");
+            System.out.println("SeedCheckerSettings preload successfully");
         } catch (Exception e) {
-            System.err.println("SeedCheckerSettings 预加载失败: " + e.getMessage());
+            System.err.println("SeedCheckerSettings preload failed: " + e.getMessage());
         }
         CavefinderGUI.main(args);
     }

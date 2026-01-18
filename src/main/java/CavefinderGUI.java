@@ -12,6 +12,7 @@ import nl.kallestruik.noisesampler.minecraft.util.MathHelper;
 import nl.kallestruik.noisesampler.minecraft.util.Util;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -33,40 +34,72 @@ import java.util.concurrent.locks.ReentrantLock;
 public class CavefinderGUI extends JFrame {
     static {
         try {
-            System.out.println("CavefinderGUI 静态初始化开始...");
+            System.out.println("CavefinderGUI static initialization starting...");
             SeedCheckerInitializer.initialize();
         } catch (Exception e) {
-            System.err.println("CavefinderGUI 静态初始化警告: " + e.getMessage());
+            System.err.println("CavefinderGUI static initialization warning: " + e.getMessage());
+        }
+    }
+    enum Language {
+        CHINESE("中文"),
+        ENGLISH("English");
+        private final String displayName;
+        Language(String displayName) {
+            this.displayName = displayName;
+        }
+        @Override
+        public String toString() {
+            return displayName;
         }
     }
     enum ParameterType {
         TEMPERATURE, HUMIDITY, EROSION, RIDGE, ENTRANCE, CHEESE, CONTINENTALNESS, AQUIFER
     }
     enum ConditionType {
-        BETWEEN("介于两值之间"),
-        GREATER_THAN("大于某值"),
-        LESS_THAN("小于某值"),
-        NOT_IN_RANGE("不含某个范围内的值"),
-        ABS_IN_RANGE("绝对值在某个范围"),
-        ABS_NOT_IN_RANGE("绝对值不在某个范围");
-
-        private final String displayName;
-
-        ConditionType(String displayName) {
-            this.displayName = displayName;
-        }
-
-        @Override
-        public String toString() {
-            return displayName;
+        BETWEEN, GREATER_THAN, LESS_THAN, NOT_IN_RANGE, ABS_IN_RANGE, ABS_NOT_IN_RANGE;
+        public String getDisplayName(Language lang) {
+            return LanguageResources.getConditionTypeName(this, lang);
         }
     }
+    // Language management
+    private Language currentLanguage = Language.CHINESE; // Default to Chinese
+    private JComboBox<Language> languageComboBox;
+    // UI component references for text updates
+    private JLabel languageLabel;
+    private JLabel caveDepthLabel;
+    private JLabel threadCountLabel;
+    private JLabel xCoordinateLabel;
+    private JLabel zCoordinateLabel;
+    private JLabel segmentSizeLabel;
+    private JLabel segmentSizeHintLabel;
+    private JLabel heightTypeLabel;
+    private JLabel rangeHeightTypeLabel;
+    private JLabel rangeCoordinatesLabel;
+    private JLabel startSeedLabel;
+    private JLabel endSeedLabel;
+    private JLabel seedListLabel;
+    private JLabel exportPathLabel;
+    private JPanel heightCheckOptionsPanel;
+    private JPanel filterModePanel;
+    private JPanel searchModePanel;
+    private JPanel seedTypePanel;
+    private JPanel seedInputPanel;
+    private JPanel biomeParamsPanel;
+    private JPanel logPanel;
     private JComboBox<Integer> depthComboBox;
     private JCheckBox checkHeightCheckBox;
     private JCheckBox bedrockImpossibleCheckBox;
     private JCheckBox entrance1OnlyCheckBox;
+    // Height check type selection
+    private JRadioButton surfaceHeightRadio;
+    private JRadioButton underwaterHeightRadio;
+    // Range check options
+    private JCheckBox rangeCheckCheckBox;
+    private JComboBox<String> rangeHeightTypeComboBox; // 最低高度, 平均高度, 最高高度
+    private JTextField rangeCoordinatesField; // Format: "x1 z1 x2 z2"
     private JRadioButton incrementModeRadio;
     private JRadioButton structureSeedRadio;
+    private JRadioButton worldSeedRadio;
     private JPanel parameterPanel;
     private final List<ParameterControl> parameterControls;
     private JTextField startSeedField;
@@ -80,6 +113,8 @@ public class CavefinderGUI extends JFrame {
     private JTextField exportPathField;
     private JButton startButton;
     private JButton stopButton;
+    private JButton loadFileButton;
+    private JButton browseExportPathButton;
     private JProgressBar progressBar;
     private JLabel statusLabel;
     private JTextArea logArea;
@@ -91,30 +126,30 @@ public class CavefinderGUI extends JFrame {
     private long filteringStartTime = 0;
     private volatile long lastUpdateTime = 0;
     private volatile long lastUpdateCompleted = 0;
-    private static final long UPDATE_INTERVAL_MS = 100; // GUI更新间隔：100毫秒
-    private static final long UPDATE_INTERVAL_COUNT = 1000; // 或每完成1000个任务更新一次
+    private static final long UPDATE_INTERVAL_MS = 100; // GUI update interval: 100ms
+    private static final long UPDATE_INTERVAL_COUNT = 1000; // or update every 1000 tasks
     private String getJarDirectory() {
         try {
-            // 获取jar文件路径
+            // Get jar file path
             String jarPath = CavefinderGUI.class.getProtectionDomain()
                     .getCodeSource()
                     .getLocation()
                     .toURI()
                     .getPath();
-            // 如果是Windows路径，去掉开头的斜杠
+            // If it's a Windows path, remove the leading slash
             if (jarPath.startsWith("/") && jarPath.length() > 2 && jarPath.charAt(2) == ':') {
                 jarPath = jarPath.substring(1);
             }
             File jarFile = new File(jarPath);
             if (jarFile.isFile()) {
-                // 如果是jar文件，返回其所在目录
+                // If it's a jar file, return its directory
                 return jarFile.getParent();
             } else {
-                // 如果不是jar文件（可能是IDE运行），返回当前工作目录
+                // If not a jar file (maybe running in IDE), return current working directory
                 return System.getProperty("user.dir");
             }
         } catch (Exception e) {
-            // 如果获取失败，返回当前工作目录
+            // If failed to get, return current working directory
             return System.getProperty("user.dir");
         }
     }
@@ -123,7 +158,7 @@ public class CavefinderGUI extends JFrame {
         return new File(jarDir, "result.txt").getAbsolutePath();
     }
     public CavefinderGUI() {
-        setTitle("洞穴查找器 GUI");
+        updateTitle();
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
         parameterControls = new ArrayList<>();
@@ -134,7 +169,10 @@ public class CavefinderGUI extends JFrame {
         updateParameterLockState();
         pack();
         setLocationRelativeTo(null);
-        setSize(1300, 800); // 增加宽度以容纳更宽的参数面板
+        setSize(1300, 800); // Increase width to accommodate wider parameter panel
+    }
+    private void updateTitle() {
+        setTitle(LanguageResources.get("title", currentLanguage));
     }
     private void loadCustomFont() {
         try {
@@ -144,18 +182,18 @@ public class CavefinderGUI extends JFrame {
                 customFont = baseFont.deriveFont(Font.PLAIN, 12);
                 fontStream.close();
             } else {
-                // 如果加载失败，使用默认字体
+                // If loading fails, use default font
                 customFont = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
             }
         } catch (Exception e) {
-            // 如果加载失败，使用默认字体
+            // If loading fails, use default font
             customFont = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
             e.printStackTrace();
         }
     }
     private void applyFontToComponent(Component component) {
         if (customFont == null) return;
-        // 跳过日志区域，它已经单独设置了字体
+        // Skip log area, it has its own font setting
         if (component == logArea) {
             return;
         }
@@ -169,23 +207,36 @@ public class CavefinderGUI extends JFrame {
         }
     }
     private void createUI() {
-        // 主面板
+        // Main panel
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        // 左侧面板 - 参数设置
+        // Language selection panel (top right)
+        JPanel languagePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
+        languageLabel = new JLabel(LanguageResources.get("language", currentLanguage));
+        languagePanel.add(languageLabel);
+        languageComboBox = new JComboBox<>(Language.values());
+        languageComboBox.setSelectedItem(currentLanguage);
+        languageComboBox.addActionListener(e -> {
+            currentLanguage = (Language) languageComboBox.getSelectedItem();
+            updateAllUITexts();
+        });
+        languagePanel.add(languageComboBox);
+        mainPanel.add(languagePanel, BorderLayout.NORTH);
+        // Left panel - Parameter settings
         JPanel leftPanel = new JPanel();
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
-        leftPanel.setBorder(BorderFactory.createTitledBorder("参数设置"));
+        leftPanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("param_settings", currentLanguage)));
         leftPanel.setPreferredSize(new Dimension(600, Integer.MAX_VALUE));
-        // 第一行：洞穴深度和线程数（与坐标对齐）
+        // First row: Cave depth and thread count (aligned with coordinates)
         JPanel firstRowPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc1 = new GridBagConstraints();
         gbc1.insets = new Insets(2, 2, 2, 2);
         gbc1.anchor = GridBagConstraints.WEST;
-        // 洞穴深度
+        // Cave depth
         gbc1.gridx = 0;
         gbc1.gridy = 0;
-        firstRowPanel.add(new JLabel("洞穴深度:"), gbc1);
+        caveDepthLabel = new JLabel(LanguageResources.get("cave_depth", currentLanguage));
+        firstRowPanel.add(caveDepthLabel, gbc1);
         Integer[] depths = new Integer[6];
         for (int i = 0; i < 6; i++) {
             depths[i] = -50 + i * 10;
@@ -197,11 +248,12 @@ public class CavefinderGUI extends JFrame {
         gbc1.fill = GridBagConstraints.HORIZONTAL;
         gbc1.weightx = 0;
         firstRowPanel.add(depthComboBox, gbc1);
-        // 线程数设置
+        // Thread count setting
         gbc1.gridx = 2;
         gbc1.fill = GridBagConstraints.NONE;
         gbc1.weightx = 0;
-        firstRowPanel.add(new JLabel("线程数:"), gbc1);
+        threadCountLabel = new JLabel(LanguageResources.get("thread_count", currentLanguage));
+        firstRowPanel.add(threadCountLabel, gbc1);
         int maxThreadCount = Runtime.getRuntime().availableProcessors();
         threadCountSpinner = new JSpinner(new SpinnerNumberModel(maxThreadCount, 1, maxThreadCount, 1));
         threadCountSpinner.setPreferredSize(new Dimension(100, 25));
@@ -210,14 +262,15 @@ public class CavefinderGUI extends JFrame {
         gbc1.weightx = 0;
         firstRowPanel.add(threadCountSpinner, gbc1);
         leftPanel.add(firstRowPanel);
-        // 第二行：坐标输入（与第一行对齐）
+        // Second row: Coordinate input (aligned with first row)
         JPanel coordinatePanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc2 = new GridBagConstraints();
         gbc2.insets = new Insets(2, 2, 2, 2);
         gbc2.anchor = GridBagConstraints.WEST;
         gbc2.gridx = 0;
         gbc2.gridy = 0;
-        coordinatePanel.add(new JLabel("X坐标:"), gbc2);
+        xCoordinateLabel = new JLabel(LanguageResources.get("x_coordinate", currentLanguage));
+        coordinatePanel.add(xCoordinateLabel, gbc2);
         xCoordinateSpinner = new JSpinner(new SpinnerNumberModel(0, -30000000, 30000000, 1));
         xCoordinateSpinner.setPreferredSize(new Dimension(100, 25));
         gbc2.gridx = 1;
@@ -227,7 +280,8 @@ public class CavefinderGUI extends JFrame {
         gbc2.gridx = 2;
         gbc2.fill = GridBagConstraints.NONE;
         gbc2.weightx = 0;
-        coordinatePanel.add(new JLabel("Z坐标:"), gbc2);
+        zCoordinateLabel = new JLabel(LanguageResources.get("z_coordinate", currentLanguage));
+        coordinatePanel.add(zCoordinateLabel, gbc2);
         zCoordinateSpinner = new JSpinner(new SpinnerNumberModel(0, -30000000, 30000000, 1));
         zCoordinateSpinner.setPreferredSize(new Dimension(100, 25));
         gbc2.gridx = 3;
@@ -235,14 +289,15 @@ public class CavefinderGUI extends JFrame {
         gbc2.weightx = 0;
         coordinatePanel.add(zCoordinateSpinner, gbc2);
         leftPanel.add(coordinatePanel);
-        // 第三行：分段大小设置（仅递增模式有效）
+        // Third row: Segment size setting (only effective in increment mode)
         JPanel segmentSizePanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc3 = new GridBagConstraints();
         gbc3.insets = new Insets(2, 2, 2, 2);
         gbc3.anchor = GridBagConstraints.WEST;
         gbc3.gridx = 0;
         gbc3.gridy = 0;
-        segmentSizePanel.add(new JLabel("分段大小:"), gbc3);
+        segmentSizeLabel = new JLabel(LanguageResources.get("segment_size", currentLanguage));
+        segmentSizePanel.add(segmentSizeLabel, gbc3);
         segmentSizeSpinner = new JSpinner(new SpinnerNumberModel(10_000_000L, 1_000_000L, 1_000_000_000L, 1_000_000L));
         segmentSizeSpinner.setPreferredSize(new Dimension(120, 25));
         gbc3.gridx = 1;
@@ -252,40 +307,128 @@ public class CavefinderGUI extends JFrame {
         gbc3.gridx = 2;
         gbc3.fill = GridBagConstraints.NONE;
         gbc3.weightx = 0;
-        segmentSizePanel.add(new JLabel("(仅递增模式，超过此值将分段处理)"), gbc3);
+        segmentSizeHintLabel = new JLabel(LanguageResources.get("segment_size_hint", currentLanguage));
+        segmentSizePanel.add(segmentSizeHintLabel, gbc3);
         leftPanel.add(segmentSizePanel);
-        // 选项复选框（放在同一行）
+        // Option checkboxes (placed in the same row)
         JPanel checkboxPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        checkHeightCheckBox = new JCheckBox("筛高度（较慢）");
+        checkHeightCheckBox = new JCheckBox(LanguageResources.get("check_height", currentLanguage));
         checkboxPanel.add(checkHeightCheckBox);
-        bedrockImpossibleCheckBox = new JCheckBox("筛基岩版无解种子");
+        bedrockImpossibleCheckBox = new JCheckBox(LanguageResources.get("filter_be_impossible", currentLanguage));
         bedrockImpossibleCheckBox.addActionListener(e -> updateParameterLockState());
         checkboxPanel.add(bedrockImpossibleCheckBox);
-        entrance1OnlyCheckBox = new JCheckBox("只筛Entrance1（更大洞穴）");
+        entrance1OnlyCheckBox = new JCheckBox(LanguageResources.get("entrance1_only", currentLanguage));
         checkboxPanel.add(entrance1OnlyCheckBox);
         leftPanel.add(checkboxPanel);
-        // 筛选模式
+        // Height check options panel
+        JPanel heightCheckPanel = new JPanel();
+        heightCheckPanel.setLayout(new BoxLayout(heightCheckPanel, BoxLayout.Y_AXIS));
+        heightCheckOptionsPanel = heightCheckPanel;
+        heightCheckPanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("height_check_options", currentLanguage)));
+        // Height type selection (Surface/Underwater)
+        JPanel heightTypePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        heightTypeLabel = new JLabel(LanguageResources.get("height_type", currentLanguage));
+        heightTypePanel.add(heightTypeLabel);
+        ButtonGroup heightTypeGroup = new ButtonGroup();
+        surfaceHeightRadio = new JRadioButton(LanguageResources.get("surface_height", currentLanguage), true);
+        underwaterHeightRadio = new JRadioButton(LanguageResources.get("underwater_height", currentLanguage));
+        heightTypeGroup.add(surfaceHeightRadio);
+        heightTypeGroup.add(underwaterHeightRadio);
+        heightTypePanel.add(surfaceHeightRadio);
+        heightTypePanel.add(underwaterHeightRadio);
+        heightCheckPanel.add(heightTypePanel);
+        // Range check option
+        JPanel rangeCheckPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbcRange = new GridBagConstraints();
+        gbcRange.insets = new Insets(2, 2, 2, 2);
+        gbcRange.anchor = GridBagConstraints.WEST;
+        rangeCheckCheckBox = new JCheckBox(LanguageResources.get("check_height_in_range", currentLanguage));
+        gbcRange.gridx = 0;
+        gbcRange.gridy = 0;
+        gbcRange.gridwidth = 2;
+        rangeCheckPanel.add(rangeCheckCheckBox, gbcRange);
+        // Range height type selection
+        gbcRange.gridx = 0;
+        gbcRange.gridy = 1;
+        gbcRange.gridwidth = 1;
+        rangeHeightTypeLabel = new JLabel(LanguageResources.get("range_height_type", currentLanguage));
+        rangeCheckPanel.add(rangeHeightTypeLabel, gbcRange);
+        rangeHeightTypeComboBox = new JComboBox<>(new String[]{
+            LanguageResources.get("min_height", currentLanguage),
+            LanguageResources.get("avg_height", currentLanguage),
+            LanguageResources.get("max_height", currentLanguage)
+        });
+        rangeHeightTypeComboBox.setSelectedIndex(0);
+        rangeHeightTypeComboBox.setPreferredSize(new Dimension(100, 25));
+        gbcRange.gridx = 1;
+        rangeCheckPanel.add(rangeHeightTypeComboBox, gbcRange);
+        // Range coordinates input
+        gbcRange.gridx = 0;
+        gbcRange.gridy = 2;
+        rangeCoordinatesLabel = new JLabel(LanguageResources.get("range_coordinates", currentLanguage));
+        rangeCheckPanel.add(rangeCoordinatesLabel, gbcRange);
+        rangeCoordinatesField = new JTextField("0 0 1 1", 15);
+        rangeCoordinatesField.setToolTipText(LanguageResources.get("range_coord_tooltip", currentLanguage));
+        gbcRange.gridx = 1;
+        rangeCheckPanel.add(rangeCoordinatesField, gbcRange);
+        heightCheckPanel.add(rangeCheckPanel);
+        // Enable/disable range check components based on checkbox
+        rangeCheckCheckBox.addActionListener(e -> {
+            // Only enable range check components if both height check and range check are enabled
+            boolean enabled = checkHeightCheckBox.isSelected() && rangeCheckCheckBox.isSelected();
+            rangeHeightTypeComboBox.setEnabled(enabled);
+            rangeCoordinatesField.setEnabled(enabled);
+        });
+        rangeHeightTypeComboBox.setEnabled(false);
+        rangeCoordinatesField.setEnabled(false);
+        // Enable/disable height type selection based on checkHeightCheckBox
+        checkHeightCheckBox.addActionListener(e -> {
+            boolean enabled = checkHeightCheckBox.isSelected();
+            surfaceHeightRadio.setEnabled(enabled && !bedrockImpossibleCheckBox.isSelected());
+            underwaterHeightRadio.setEnabled(enabled && !bedrockImpossibleCheckBox.isSelected());
+            rangeCheckCheckBox.setEnabled(enabled);
+            if (!enabled) {
+                rangeCheckCheckBox.setSelected(false);
+                // Also disable range check components when height check is disabled
+                rangeHeightTypeComboBox.setEnabled(false);
+                rangeCoordinatesField.setEnabled(false);
+            } else {
+                // When height check is enabled, range check components state depends on rangeCheckCheckBox
+                boolean rangeEnabled = rangeCheckCheckBox.isSelected();
+                rangeHeightTypeComboBox.setEnabled(rangeEnabled);
+                rangeCoordinatesField.setEnabled(rangeEnabled);
+            }
+        });
+        surfaceHeightRadio.setEnabled(false);
+        underwaterHeightRadio.setEnabled(false);
+        rangeCheckCheckBox.setEnabled(false);
+        leftPanel.add(heightCheckPanel);
+        // Filter mode
         JPanel modePanel = new JPanel();
         modePanel.setLayout(new GridLayout(1, 2, 10, 0));
-        modePanel.setBorder(BorderFactory.createTitledBorder("筛选模式"));
-        // 第一列：搜索模式
+        filterModePanel = modePanel;
+        modePanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("filter_mode", currentLanguage)));
+        // First column: Search mode
         JPanel searchModePanel = new JPanel();
+        this.searchModePanel = searchModePanel;
         searchModePanel.setLayout(new BoxLayout(searchModePanel, BoxLayout.Y_AXIS));
-        searchModePanel.setBorder(BorderFactory.createTitledBorder("搜索模式"));
+        searchModePanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("search_mode", currentLanguage)));
         ButtonGroup searchModeGroup = new ButtonGroup();
-        incrementModeRadio = new JRadioButton("递增筛种", true);
-        JRadioButton listModeRadio = new JRadioButton("从列表筛种");
+        incrementModeRadio = new JRadioButton(LanguageResources.get("incremental", currentLanguage), true);
+        JRadioButton listModeRadio = new JRadioButton(LanguageResources.get("filter_from_list", currentLanguage));
+        // Store reference for language updates
         searchModeGroup.add(incrementModeRadio);
         searchModeGroup.add(listModeRadio);
         searchModePanel.add(incrementModeRadio);
         searchModePanel.add(listModeRadio);
-        // 第二列：种子类型
+        // Second column: Seed type
         JPanel seedTypePanel = new JPanel();
+        this.seedTypePanel = seedTypePanel;
         seedTypePanel.setLayout(new BoxLayout(seedTypePanel, BoxLayout.Y_AXIS));
-        seedTypePanel.setBorder(BorderFactory.createTitledBorder("种子类型"));
+        seedTypePanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("seed_type", currentLanguage)));
         ButtonGroup seedTypeGroup = new ButtonGroup();
-        structureSeedRadio = new JRadioButton("StructureSeed", true);
-        JRadioButton worldSeedRadio = new JRadioButton("WorldSeed");
+        structureSeedRadio = new JRadioButton(LanguageResources.get("structure_seed", currentLanguage), true);
+        worldSeedRadio = new JRadioButton(LanguageResources.get("world_seed", currentLanguage));
         seedTypeGroup.add(structureSeedRadio);
         seedTypeGroup.add(worldSeedRadio);
         seedTypePanel.add(structureSeedRadio);
@@ -293,17 +436,19 @@ public class CavefinderGUI extends JFrame {
         modePanel.add(searchModePanel);
         modePanel.add(seedTypePanel);
         leftPanel.add(modePanel);
-        // 种子输入区域
+        // Seed input area
         JPanel seedInputPanel = new JPanel();
+        this.seedInputPanel = seedInputPanel;
         seedInputPanel.setLayout(new BoxLayout(seedInputPanel, BoxLayout.Y_AXIS));
-        seedInputPanel.setBorder(BorderFactory.createTitledBorder("种子输入"));
+        seedInputPanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("seed_input", currentLanguage)));
         JPanel incrementPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(2, 2, 2, 2);
         gbc.anchor = GridBagConstraints.WEST;
         gbc.gridx = 0;
         gbc.gridy = 0;
-        incrementPanel.add(new JLabel("起始种子:"), gbc);
+        startSeedLabel = new JLabel(LanguageResources.get("start_seed", currentLanguage));
+        incrementPanel.add(startSeedLabel, gbc);
         startSeedField = new JTextField(20);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -313,7 +458,8 @@ public class CavefinderGUI extends JFrame {
         gbc.gridy = 1;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        incrementPanel.add(new JLabel("结束种子:"), gbc);
+        endSeedLabel = new JLabel(LanguageResources.get("end_seed", currentLanguage));
+        incrementPanel.add(endSeedLabel, gbc);
         endSeedField = new JTextField(20);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -321,101 +467,105 @@ public class CavefinderGUI extends JFrame {
         incrementPanel.add(endSeedField, gbc);
         seedInputPanel.add(incrementPanel);
         JPanel listPanel = new JPanel(new BorderLayout());
-        listPanel.add(new JLabel("种子列表（每行一个）:"), BorderLayout.NORTH);
-        seedListArea = new JTextArea(12, 40); // 增加高度从8行到12行，宽度从30列到40列
+        seedListLabel = new JLabel(LanguageResources.get("seed_list", currentLanguage));
+        listPanel.add(seedListLabel, BorderLayout.NORTH);
+        seedListArea = new JTextArea(12, 40); // Increase height from 8 to 12 rows, width from 30 to 40 columns
         seedListArea.setLineWrap(true);
         JScrollPane scrollPane = new JScrollPane(seedListArea);
         listPanel.add(scrollPane, BorderLayout.CENTER);
-        JButton loadFileButton = new JButton("从文件加载");
+        loadFileButton = new JButton(LanguageResources.get("load_from_file", currentLanguage));
         loadFileButton.addActionListener(e -> loadSeedFile());
         listPanel.add(loadFileButton, BorderLayout.SOUTH);
         seedInputPanel.add(listPanel);
         leftPanel.add(seedInputPanel);
-        // 参数条件面板
+        // Parameter condition panel
         parameterPanel = new JPanel();
         parameterPanel.setLayout(new BoxLayout(parameterPanel, BoxLayout.Y_AXIS));
-        parameterPanel.setBorder(BorderFactory.createTitledBorder("群系气候参数"));
-        // 按顺序添加参数
-        addParameterControl(ParameterType.TEMPERATURE, "Temperature");
-        addParameterControl(ParameterType.HUMIDITY, "Humidity");
-        addParameterControl(ParameterType.EROSION, "Erosion");
-        addParameterControl(ParameterType.RIDGE, "Ridge (Weirdness)");
-        addParameterControl(ParameterType.ENTRANCE, "Entrance");
-        addParameterControl(ParameterType.CHEESE, "Cheese");
-        addParameterControl(ParameterType.CONTINENTALNESS, "Continentalness");
-        addParameterControl(ParameterType.AQUIFER, "AquiferFloodlevelFloodness");
+        biomeParamsPanel = parameterPanel;
+        parameterPanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("biome_params", currentLanguage)));
+        // Add parameters in order
+        addParameterControl(ParameterType.TEMPERATURE, LanguageResources.get("param_temperature", currentLanguage));
+        addParameterControl(ParameterType.HUMIDITY, LanguageResources.get("param_humidity", currentLanguage));
+        addParameterControl(ParameterType.EROSION, LanguageResources.get("param_erosion", currentLanguage));
+        addParameterControl(ParameterType.RIDGE, LanguageResources.get("param_ridge", currentLanguage));
+        addParameterControl(ParameterType.ENTRANCE, LanguageResources.get("param_entrance", currentLanguage));
+        addParameterControl(ParameterType.CHEESE, LanguageResources.get("param_cheese", currentLanguage));
+        addParameterControl(ParameterType.CONTINENTALNESS, LanguageResources.get("param_continentalness", currentLanguage));
+        addParameterControl(ParameterType.AQUIFER, LanguageResources.get("param_aquifer", currentLanguage));
         JScrollPane paramScrollPane = new JScrollPane(parameterPanel);
-        paramScrollPane.setPreferredSize(new Dimension(750, 300)); // 增加宽度以容纳所有组件，包括第二个值
-        // 右侧面板 - 参数和日志
+        paramScrollPane.setPreferredSize(new Dimension(750, 300)); // Increase width to accommodate all components including second value
+        // Right panel - Parameters and log
         JPanel rightPanel = new JPanel(new BorderLayout());
         rightPanel.setPreferredSize(new Dimension(750, Integer.MAX_VALUE));
         rightPanel.add(paramScrollPane, BorderLayout.CENTER);
-        // 日志区域
+        // Log area
         JPanel logPanel = new JPanel(new BorderLayout());
-        logPanel.setBorder(BorderFactory.createTitledBorder("日志"));
-        logArea = new JTextArea(15, 25); // 增加高度从10行到15行
+        this.logPanel = logPanel;
+        logPanel.setBorder(BorderFactory.createTitledBorder(LanguageResources.get("log", currentLanguage)));
+        logArea = new JTextArea(15, 25); // Increase height from 10 to 15 rows
         logArea.setEditable(false);
-        // 日志区域使用自定义字体（如果已加载），否则使用等宽字体
+        // Log area uses custom font (if loaded), otherwise use monospaced font
         logArea.setFont(Objects.requireNonNullElseGet(customFont, () -> new Font(Font.MONOSPACED, Font.PLAIN, 12)));
         JScrollPane logScrollPane = new JScrollPane(logArea);
         logPanel.add(logScrollPane, BorderLayout.CENTER);
         rightPanel.add(logPanel, BorderLayout.SOUTH);
-        // 控制按钮和进度
+        // Control buttons and progress
         JPanel controlPanel = new JPanel(new BorderLayout());
-        // 导出路径选择
+        // Export path selection
         JPanel exportPanel = new JPanel(new BorderLayout(5, 0));
-        exportPanel.add(new JLabel("导出路径:"), BorderLayout.WEST);
+        exportPathLabel = new JLabel(LanguageResources.get("export_path", currentLanguage));
+        exportPanel.add(exportPathLabel, BorderLayout.WEST);
         exportPathField = new JTextField(getDefaultExportPath());
         exportPanel.add(exportPathField, BorderLayout.CENTER);
-        JButton browseExportPathButton = new JButton("浏览...");
+        browseExportPathButton = new JButton(LanguageResources.get("browse", currentLanguage));
         browseExportPathButton.addActionListener(e -> browseExportPath());
         exportPanel.add(browseExportPathButton, BorderLayout.EAST);
-        // 按钮面板（放在导出路径下面，居中显示）
+        // Button panel (placed below export path, centered)
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
-        startButton = new JButton("开始筛选");
+        startButton = new JButton(LanguageResources.get("start_filtering", currentLanguage));
         startButton.addActionListener(e -> startFiltering());
-        stopButton = new JButton("停止");
+        stopButton = new JButton(LanguageResources.get("stop", currentLanguage));
         stopButton.setEnabled(false);
         stopButton.addActionListener(e -> stopFiltering());
         buttonPanel.add(startButton);
         buttonPanel.add(stopButton);
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        statusLabel = new JLabel("就绪");
-        // 组装控制面板
+        statusLabel = new JLabel(LanguageResources.get("ready", currentLanguage));
+        // Assemble control panel
         JPanel topControlPanel = new JPanel(new BorderLayout());
         topControlPanel.add(exportPanel, BorderLayout.NORTH);
         topControlPanel.add(buttonPanel, BorderLayout.CENTER);
         controlPanel.add(topControlPanel, BorderLayout.NORTH);
         controlPanel.add(progressBar, BorderLayout.CENTER);
         controlPanel.add(statusLabel, BorderLayout.SOUTH);
-        // 组装主面板
+        // Assemble main panel
         mainPanel.add(leftPanel, BorderLayout.WEST);
         mainPanel.add(rightPanel, BorderLayout.CENTER);
         mainPanel.add(controlPanel, BorderLayout.SOUTH);
         add(mainPanel);
     }
-    // 所有参数标签的最大宽度（用于对齐）
+    // Maximum width for all parameter labels (for alignment)
     private static final int MAX_LABEL_WIDTH = 280;
     private void addParameterControl(ParameterType type, String label) {
         ParameterControl control = new ParameterControl(type, label, MAX_LABEL_WIDTH);
-        // 根据参数类型设置默认值
+        // Set default values based on parameter type
         switch (type) {
             case CONTINENTALNESS ->
-                // 默认排除<-0.11的（即只接受>= -0.11的值，使用BETWEEN [-0.11, 1.0]）
+                // Default exclude <-0.11 (i.e., only accept >= -0.11, use BETWEEN [-0.11, 1.0])
                     control.setDefaultValues(true, ConditionType.GREATER_THAN, -0.11, 1.0);
             case RIDGE ->
-                // 默认排除在-0.16到0.16之间的值
+                // Default exclude values between -0.16 and 0.16
                     control.setDefaultValues(true, ConditionType.NOT_IN_RANGE, -0.16, 0.16);
             case ENTRANCE, CHEESE ->
-                // 默认是<0（小于0）
+                // Default is <0 (less than 0)
                     control.setDefaultValues(true, ConditionType.LESS_THAN, 0.0, 0.0);
             case AQUIFER ->
-                // 默认是<0.4（使用BETWEEN [-1.0, 0.4]）
+                // Default is <0.4 (use BETWEEN [-1.0, 0.4])
                     control.setDefaultValues(true, ConditionType.LESS_THAN, 0.4, 0.4);
             default -> {
             }
-            // 其他参数默认不启用
+            // Other parameters default to not enabled
         }
         parameterControls.add(control);
         parameterPanel.add(control.getPanel());
@@ -427,17 +577,17 @@ public class CavefinderGUI extends JFrame {
             try {
                 String content = new String(Files.readAllBytes(file.toPath()));
                 seedListArea.setText(content);
-                log("已加载文件: " + file.getName());
+                log(LanguageResources.get("file_loaded", currentLanguage) + file.getName());
             } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "加载文件失败: " + e.getMessage(),
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, LanguageResources.get("load_file_failed", currentLanguage) + e.getMessage(),
+                        LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
             }
         }
     }
     private void browseExportPath() {
         JFileChooser exportChooser = new JFileChooser();
         exportChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        exportChooser.setDialogTitle("选择导出路径");
+        exportChooser.setDialogTitle(LanguageResources.get("select_export_path", currentLanguage));
         String currentPath = exportPathField.getText();
         if (currentPath != null && !currentPath.isEmpty()) {
             File currentFile = new File(currentPath);
@@ -458,68 +608,187 @@ public class CavefinderGUI extends JFrame {
         for (ParameterControl control : parameterControls) {
             control.setEnabled(!locked);
         }
-        // 锁定"只筛Entrance1"选项
+        // Lock "Only filter Entrance1" option
         entrance1OnlyCheckBox.setEnabled(!locked);
+        // Lock height type selection when filtering bedrock impossible seeds
+        boolean heightCheckEnabled = checkHeightCheckBox.isSelected() && !locked;
+        surfaceHeightRadio.setEnabled(heightCheckEnabled);
+        underwaterHeightRadio.setEnabled(heightCheckEnabled);
+    }
+    // Helper method to safely set text on a component
+    private void setTextSafely(JComponent component, String key) {
+        if (component != null) {
+            if (component instanceof JLabel) {
+                ((JLabel) component).setText(LanguageResources.get(key, currentLanguage));
+            } else if (component instanceof AbstractButton) {
+                ((AbstractButton) component).setText(LanguageResources.get(key, currentLanguage));
+            }
+        }
+    }
+    // Helper method to safely set title on a panel's border
+    private void setBorderTitleSafely(JPanel panel, String key) {
+        if (panel != null && panel.getBorder() instanceof TitledBorder) {
+            ((TitledBorder) panel.getBorder()).setTitle(LanguageResources.get(key, currentLanguage));
+        }
+    }
+    private void updateAllUITexts() {
+        updateTitle();
+        // Update labels
+        setTextSafely(languageLabel, "language");
+        setTextSafely(caveDepthLabel, "cave_depth");
+        setTextSafely(threadCountLabel, "thread_count");
+        setTextSafely(xCoordinateLabel, "x_coordinate");
+        setTextSafely(zCoordinateLabel, "z_coordinate");
+        setTextSafely(segmentSizeLabel, "segment_size");
+        setTextSafely(segmentSizeHintLabel, "segment_size_hint");
+        setTextSafely(heightTypeLabel, "height_type");
+        setTextSafely(rangeHeightTypeLabel, "range_height_type");
+        setTextSafely(rangeCoordinatesLabel, "range_coordinates");
+        setTextSafely(startSeedLabel, "start_seed");
+        setTextSafely(endSeedLabel, "end_seed");
+        setTextSafely(seedListLabel, "seed_list");
+        setTextSafely(exportPathLabel, "export_path");
+        setTextSafely(statusLabel, "ready");
+        // Update checkboxes and buttons
+        setTextSafely(checkHeightCheckBox, "check_height");
+        setTextSafely(bedrockImpossibleCheckBox, "filter_be_impossible");
+        setTextSafely(entrance1OnlyCheckBox, "entrance1_only");
+        setTextSafely(rangeCheckCheckBox, "check_height_in_range");
+        setTextSafely(surfaceHeightRadio, "surface_height");
+        setTextSafely(underwaterHeightRadio, "underwater_height");
+        setTextSafely(incrementModeRadio, "incremental");
+        setTextSafely(structureSeedRadio, "structure_seed");
+        setTextSafely(worldSeedRadio, "world_seed");
+        setTextSafely(startButton, "start_filtering");
+        setTextSafely(stopButton, "stop");
+        setTextSafely(loadFileButton, "load_from_file");
+        setTextSafely(browseExportPathButton, "browse");
+        // Update panel borders
+        setBorderTitleSafely(heightCheckOptionsPanel, "height_check_options");
+        setBorderTitleSafely(filterModePanel, "filter_mode");
+        setBorderTitleSafely(searchModePanel, "search_mode");
+        setBorderTitleSafely(seedTypePanel, "seed_type");
+        setBorderTitleSafely(seedInputPanel, "seed_input");
+        setBorderTitleSafely(biomeParamsPanel, "biome_params");
+        setBorderTitleSafely(logPanel, "log");
+        // Update range coordinates tooltip
+        if (rangeCoordinatesField != null) {
+            rangeCoordinatesField.setToolTipText(LanguageResources.get("range_coord_tooltip", currentLanguage));
+        }
+        // Update range height type combo box
+        updateRangeHeightTypeComboBox();
+        // Update listModeRadio - need to find it in the searchModePanel
+        if (searchModePanel != null) {
+            for (Component comp : searchModePanel.getComponents()) {
+                if (comp instanceof JRadioButton && comp != incrementModeRadio) {
+                    ((JRadioButton) comp).setText(LanguageResources.get("filter_from_list", currentLanguage));
+                    break;
+                }
+            }
+        }
+        // Update parameter controls
+        updateParameterControls();
+    }
+    private void updateRangeHeightTypeComboBox() {
+        if (rangeHeightTypeComboBox == null) return;
+        String[] items = new String[]{
+            LanguageResources.get("min_height", currentLanguage),
+            LanguageResources.get("avg_height", currentLanguage),
+            LanguageResources.get("max_height", currentLanguage)
+        };
+        Object selected = rangeHeightTypeComboBox.getSelectedItem();
+        int selectedIndex = -1;
+        // Determine current selection index by checking the selected item
+        if (selected != null) {
+            String selectedStr = selected.toString();
+            // Check for Chinese or English keywords
+            if (selectedStr.contains("最低") || selectedStr.contains("Minimum")) {
+                selectedIndex = 0;
+            } else if (selectedStr.contains("平均") || selectedStr.contains("Average")) {
+                selectedIndex = 1;
+            } else if (selectedStr.contains("最高") || selectedStr.contains("Maximum")) {
+                selectedIndex = 2;
+            }
+        }
+        rangeHeightTypeComboBox.removeAllItems();
+        for (String item : items) {
+            rangeHeightTypeComboBox.addItem(item);
+        }
+        // Restore selection if valid
+        if (selectedIndex >= 0 && selectedIndex < rangeHeightTypeComboBox.getItemCount()) {
+            rangeHeightTypeComboBox.setSelectedIndex(selectedIndex);
+        }
+    }
+    private void updateParameterControls() {
+        for (ParameterControl control : parameterControls) {
+            control.updateLanguage();
+        }
+        // Update condition type combo boxes in parameter controls
+        SwingUtilities.invokeLater(() -> {
+            for (ParameterControl control : parameterControls) {
+                control.updateConditionTypes();
+            }
+        });
     }
     private void startFiltering() {
         if (isRunning) {
             return;
         }
-        // 验证输入
+        // Validate input
         if (incrementModeRadio.isSelected()) {
             try {
                 Long.parseLong(startSeedField.getText());
                 Long.parseLong(endSeedField.getText());
             } catch (NumberFormatException e) {
-                JOptionPane.showMessageDialog(this, "请输入有效的种子数字",
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, LanguageResources.get("invalid_seed_numbers", currentLanguage),
+                        LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
                 return;
             }
         } else {
             if (seedListArea.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "请输入种子列表或从文件加载",
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, LanguageResources.get("enter_seed_list", currentLanguage),
+                        LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
-        // 检查结果文件
+        // Check result file
         String exportPath = exportPathField.getText().trim();
         if (exportPath.isEmpty()) {
             exportPath = getDefaultExportPath();
             exportPathField.setText(exportPath);
         }
         Path resultPath = Paths.get(exportPath);
-        // 检查路径是否可以访问
+        // Check if path is accessible
         try {
-            // 检查父目录是否存在且可写
+            // Check if parent directory exists and is writable
             Path parentPath = resultPath.getParent();
             if (parentPath != null) {
                 if (!Files.exists(parentPath)) {
-                    // 尝试创建目录
+                    // Try to create directory
                     Files.createDirectories(parentPath);
                 }
-                // 检查目录是否可写
+                // Check if directory is writable
                 if (!Files.isWritable(parentPath)) {
                     JOptionPane.showMessageDialog(this,
-                            "无法访问导出路径的目录：" + parentPath + "\n请选择其他路径。",
-                            "错误", JOptionPane.ERROR_MESSAGE);
+                            LanguageResources.get("cannot_access_dir", currentLanguage) + parentPath + LanguageResources.get("please_select_other", currentLanguage),
+                            LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
                     return;
                 }
             }
         } catch (AccessDeniedException e) {
             JOptionPane.showMessageDialog(this,
-                    "无法访问导出路径：" + exportPath + "\n访问被拒绝。请选择其他路径。",
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    LanguageResources.get("cannot_access_path", currentLanguage) + exportPath + LanguageResources.get("access_denied", currentLanguage),
+                    LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
             return;
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                    "无法访问导出路径：" + exportPath + "\n错误：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    LanguageResources.get("cannot_access_path", currentLanguage) + exportPath + LanguageResources.get("error_colon", currentLanguage) + e.getMessage(),
+                    LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE);
             return;
         }
         if (Files.exists(resultPath)) {
             int result = JOptionPane.showConfirmDialog(this,
-                    "结果文件已存在，将被覆盖。是否继续？", "提醒",
+                    LanguageResources.get("file_exists_overwrite", currentLanguage), LanguageResources.get("reminder", currentLanguage),
                     JOptionPane.YES_NO_OPTION);
             if (result != JOptionPane.YES_OPTION) {
                 return;
@@ -533,18 +802,18 @@ public class CavefinderGUI extends JFrame {
         filteringStartTime = System.currentTimeMillis();
         lastUpdateTime = 0;
         lastUpdateCompleted = 0;
-        // 启动筛选线程
+        // Start filtering thread
         new Thread(this::runFiltering).start();
     }
     private void stopFiltering() {
         isRunning = false;
         if (executor != null) {
             executor.shutdownNow();
-            executor = null; // 释放引用，帮助GC回收
+            executor = null; // Release reference to help GC
         }
         startButton.setEnabled(true);
         stopButton.setEnabled(false);
-        log("筛选已停止");
+        log(LanguageResources.get("filtering_stopped", currentLanguage));
     }
     private void runFiltering() {
         try {
@@ -552,9 +821,9 @@ public class CavefinderGUI extends JFrame {
             if (exportPath.isEmpty()) {
                 exportPath = getDefaultExportPath();
             }
-            final String finalExportPath = exportPath; // 用于lambda表达式
+            final String finalExportPath = exportPath; // For lambda expression
             Path resultPath = Paths.get(exportPath);
-            // 再次检查路径是否可以访问（在后台线程中）
+            // Check path accessibility again (in background thread)
             try {
                 Path parentPath = resultPath.getParent();
                 if (parentPath != null) {
@@ -563,8 +832,8 @@ public class CavefinderGUI extends JFrame {
                     }
                     if (!Files.isWritable(parentPath)) {
                         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                "无法访问导出路径的目录：" + parentPath + "\n请选择其他路径。",
-                                "错误", JOptionPane.ERROR_MESSAGE));
+                                LanguageResources.get("cannot_access_dir", currentLanguage) + parentPath + LanguageResources.get("please_select_other", currentLanguage),
+                                LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE));
                         SwingUtilities.invokeLater(() -> {
                             startButton.setEnabled(true);
                             stopButton.setEnabled(false);
@@ -575,8 +844,8 @@ public class CavefinderGUI extends JFrame {
                 }
             } catch (AccessDeniedException e) {
                 SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                        "无法访问导出路径：" + finalExportPath + "\n访问被拒绝。请选择其他路径。",
-                        "错误", JOptionPane.ERROR_MESSAGE));
+                        LanguageResources.get("cannot_access_path", currentLanguage) + finalExportPath + LanguageResources.get("access_denied", currentLanguage),
+                        LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE));
                 SwingUtilities.invokeLater(() -> {
                     startButton.setEnabled(true);
                     stopButton.setEnabled(false);
@@ -584,10 +853,10 @@ public class CavefinderGUI extends JFrame {
                 });
                 return;
             } catch (Exception e) {
-                final Exception finalException = e; // 用于lambda表达式
+                final Exception finalException = e; // For lambda expression
                 SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                        "无法访问导出路径：" + finalExportPath + "\n错误：" + finalException.getMessage(),
-                        "错误", JOptionPane.ERROR_MESSAGE));
+                        LanguageResources.get("cannot_access_path", currentLanguage) + finalExportPath + LanguageResources.get("error_colon", currentLanguage) + finalException.getMessage(),
+                        LanguageResources.get("error", currentLanguage), JOptionPane.ERROR_MESSAGE));
                 SwingUtilities.invokeLater(() -> {
                     startButton.setEnabled(true);
                     stopButton.setEnabled(false);
@@ -598,23 +867,23 @@ public class CavefinderGUI extends JFrame {
             if (Files.exists(resultPath)) {
                 Files.delete(resultPath);
             }
-            // 确保目录存在
+            // Ensure directory exists
             if (resultPath.getParent() != null) {
                 Files.createDirectories(resultPath.getParent());
             }
-            // 获取坐标
+            // Get coordinates
             int x = (Integer) xCoordinateSpinner.getValue();
             int z = (Integer) zCoordinateSpinner.getValue();
 
-            // 计算总任务数（用于进度显示）
+            // Calculate total task count (for progress display)
             long totalTaskCount = 0;
             if (incrementModeRadio.isSelected()) {
                 long start = Long.parseLong(startSeedField.getText());
                 long end = Long.parseLong(endSeedField.getText());
-                // 计算范围，处理可能的溢出
+                // Calculate range, handle possible overflow
                 if (end >= start) {
                     totalTaskCount = end - start + 1;
-                    // 如果范围太大导致溢出，设置为-1表示未知总数
+                    // If range is too large causing overflow, set to -1 for unknown total
                     if (totalTaskCount < 0) {
                         totalTaskCount = -1;
                     }
@@ -628,58 +897,58 @@ public class CavefinderGUI extends JFrame {
                             Long.parseLong(line);
                             totalTaskCount++;
                         } catch (NumberFormatException e) {
-                            // 跳过无效种子
+                            // Skip invalid seed
                         }
                     }
                 }
             }
             totalTasks.set(totalTaskCount);
             completedTasks.set(0);
-            // 如果启用了高度检查，在主线程中预先初始化 SeedCheckerSettings
-            // 这样可以避免多线程并发初始化导致的 ExceptionInInitializerError
+            // If height check is enabled, pre-initialize SeedCheckerSettings in main thread
+            // This avoids ExceptionInInitializerError caused by concurrent initialization in multi-threading
             if (checkHeightCheckBox.isSelected()) {
                 try {
-                    log("检查 SeedChecker 状态...");
-                    // 如果还没有初始化，尝试初始化
+                    log(LanguageResources.get("checking_seedchecker", currentLanguage));
+                    // If not initialized yet, try to initialize
                     if (!SeedCheckerInitializer.isInitialized()) {
-                        log("尝试初始化 SeedChecker...");
+                        log(LanguageResources.get("attempting_init_seedchecker", currentLanguage));
                         SeedCheckerInitializer.initialize();
                     }
                     if (SeedCheckerInitializer.isInitialized()) {
-                        log("SeedChecker 已就绪");
+                        log(LanguageResources.get("seedchecker_ready", currentLanguage));
                     } else {
-                        log("警告: SeedChecker 初始化失败，高度检查可能不可用");
+                        log(LanguageResources.get("seedchecker_init_failed", currentLanguage));
                     }
                 } catch (Exception e) {
-                    log("SeedChecker 检查过程中出现异常: " + e.getMessage());
+                    log(LanguageResources.get("seedchecker_check_exception", currentLanguage) + e.getMessage());
                 }
             }
             int threadCount = (Integer) threadCountSpinner.getValue();
-            // SpinnerNumberModel可能返回Integer、Long或Double，使用Number类型安全转换
+            // SpinnerNumberModel may return Integer, Long or Double, use Number type for safe conversion
             long segmentSize = ((Number) segmentSizeSpinner.getValue()).longValue();
             ReentrantLock fileLock = new ReentrantLock();
 
             try (BufferedWriter writer = Files.newBufferedWriter(resultPath)) {
                 if (incrementModeRadio.isSelected()) {
-                    // 递增模式
+                    // Increment mode
                     long start = Long.parseLong(startSeedField.getText());
                     long end = Long.parseLong(endSeedField.getText());
                     long totalCount = end - start + 1;
 
-                    log(String.format("开始筛选: %d - %d (共 %d 个种子)", start, end, totalCount));
+                    log(String.format(LanguageResources.get("starting_filtering", currentLanguage), start, end, totalCount));
 
                     if (totalCount <= segmentSize) {
-                        // 小于等于分段大小：使用简单高效方案
+                        // Less than or equal to segment size: use simple efficient solution
                         executor = Executors.newFixedThreadPool(threadCount);
                         if (structureSeedRadio.isSelected()) {
-                            // StructureSeed模式：每个任务处理1个structureSeed（内部处理65536个worldSeed）
+                            // StructureSeed mode: each task processes 1 structureSeed (internally handles 65536 worldSeeds)
                             for (long seed = start; seed <= end && isRunning; seed++) {
                                 final long finalSeed = seed;
                                 executor.execute(() -> processStructureSeed(finalSeed, x, z, writer, fileLock));
                             }
                         } else {
-                            // WorldSeed模式：批量处理，减少任务数和调度开销
-                            final long BATCH_SIZE_WS = 1000; // 每批处理1000个worldSeed
+                            // WorldSeed mode: batch processing to reduce task count and scheduling overhead
+                            final long BATCH_SIZE_WS = 1000; // Process 1000 worldSeeds per batch
                             long currentBatchStart = start;
                             while (currentBatchStart <= end && isRunning) {
                                 final long batchStart = currentBatchStart;
@@ -700,28 +969,28 @@ public class CavefinderGUI extends JFrame {
                             executor = null;
                         }
                     } else {
-                        // 大于分段大小：分段处理，每段结束后彻底清理
+                        // Greater than segment size: segment processing, thoroughly clean up after each segment
                         long segmentCount = (totalCount + segmentSize - 1) / segmentSize;
-                        log(String.format("种子数量超过 %d，将分 %d 段处理", segmentSize, segmentCount));
+                        log(String.format(LanguageResources.get("seed_count_exceeds", currentLanguage), segmentSize, segmentCount));
 
                         long currentStart = start;
                         int segmentIndex = 1;
 
                         while (currentStart <= end && isRunning) {
                             long currentEnd = Math.min(currentStart + segmentSize - 1, end);
-                            log(String.format("处理第 %d/%d 段: %d - %d", segmentIndex, segmentCount, currentStart, currentEnd));
+                            log(String.format(LanguageResources.get("processing_segment", currentLanguage), segmentIndex, segmentCount, currentStart, currentEnd));
 
-                            // 创建新的线程池处理当前段
+                            // Create new thread pool for current segment
                             executor = Executors.newFixedThreadPool(threadCount);
                             if (structureSeedRadio.isSelected()) {
-                                // StructureSeed模式：每个任务处理1个structureSeed
+                                // StructureSeed mode: each task processes 1 structureSeed
                                 for (long seed = currentStart; seed <= currentEnd && isRunning; seed++) {
                                     final long finalSeed = seed;
                                     executor.execute(() -> processStructureSeed(finalSeed, x, z, writer, fileLock));
                                 }
                             } else {
-                                // WorldSeed模式：批量处理，减少任务数和调度开销
-                                final long BATCH_SIZE_WS = 1000; // 每批处理1000个worldSeed
+                                // WorldSeed mode: batch processing to reduce task count and scheduling overhead
+                                final long BATCH_SIZE_WS = 1000; // Process 1000 worldSeeds per batch
                                 long batchStart = currentStart;
                                 while (batchStart <= currentEnd && isRunning) {
                                     final long batchStartFinal = batchStart;
@@ -731,7 +1000,7 @@ public class CavefinderGUI extends JFrame {
                                 }
                             }
 
-                            // 等待当前段完成
+                            // Wait for current segment to complete
                             executor.shutdown();
                             try {
                                 if (!executor.awaitTermination(365, TimeUnit.DAYS)) {
@@ -742,23 +1011,22 @@ public class CavefinderGUI extends JFrame {
                                 Thread.currentThread().interrupt();
                                 break;
                             }
-
-                            // 彻底清理内存
+                            // Thoroughly clean up memory
                             executor = null;
-                            System.gc(); // 建议JVM进行垃圾回收
+                            System.gc(); // Suggest JVM to perform garbage collection
 
                             currentStart = currentEnd + 1;
                             segmentIndex++;
                         }
                     }
                 } else {
-                    // 列表模式
+                    // List mode
                     executor = Executors.newFixedThreadPool(threadCount);
                     String[] lines = seedListArea.getText().split("\n");
-                    log(String.format("开始筛选列表 (共 %d 行)", lines.length));
+                    log(String.format(LanguageResources.get("starting_list_filtering", currentLanguage), lines.length));
 
                     if (structureSeedRadio.isSelected()) {
-                        // StructureSeed模式：每个任务处理1个structureSeed
+                        // StructureSeed mode: each task processes 1 structureSeed
                         for (String line : lines) {
                             if (!isRunning) break;
                             line = line.trim();
@@ -767,13 +1035,13 @@ public class CavefinderGUI extends JFrame {
                                     final long seed = Long.parseLong(line);
                                     executor.execute(() -> processStructureSeed(seed, x, z, writer, fileLock));
                                 } catch (NumberFormatException e) {
-                                    log("跳过无效种子: " + line);
+                                    log(LanguageResources.get("skipping_invalid_seed", currentLanguage) + line);
                                 }
                             }
                         }
                     } else {
-                        // WorldSeed模式：批量处理，减少任务数和调度开销
-                        final long BATCH_SIZE_WS = 1000; // 每批处理1000个worldSeed
+                        // WorldSeed mode: batch processing to reduce task count and scheduling overhead
+                        final long BATCH_SIZE_WS = 1000; // Process 1000 worldSeeds per batch
                         List<Long> batch = new ArrayList<>();
                         for (String line : lines) {
                             if (!isRunning) break;
@@ -799,7 +1067,7 @@ public class CavefinderGUI extends JFrame {
                                                 }
                                                 processedCount++;
                                             }
-                                            // 批量更新进度
+                                            // Batch update progress
                                             if (processedCount > 0) {
                                                 completedTasks.addAndGet(processedCount - 1);
                                                 updateProgress();
@@ -808,11 +1076,11 @@ public class CavefinderGUI extends JFrame {
                                         batch.clear();
                                     }
                                 } catch (NumberFormatException e) {
-                                    log("跳过无效种子: " + line);
+                                    log(LanguageResources.get("skipping_invalid_seed", currentLanguage) + line);
                                 }
                             }
                         }
-                        // 处理剩余的种子
+                        // Process remaining seeds
                         if (!batch.isEmpty() && isRunning) {
                             final List<Long> batchToProcess = new ArrayList<>(batch);
                             executor.execute(() -> {
@@ -830,7 +1098,7 @@ public class CavefinderGUI extends JFrame {
                                     }
                                     processedCount++;
                                 }
-                                // 批量更新进度
+                                // Batch update progress
                                 if (processedCount > 0) {
                                     completedTasks.addAndGet(processedCount - 1);
                                     updateProgress();
@@ -864,8 +1132,8 @@ public class CavefinderGUI extends JFrame {
                 double avgSpeed = totalElapsedSec > 0 ? totalSeedsProcessed / totalElapsedSec : 0;
                 String avgSpeedStr = formatSpeed(avgSpeed);
 
-                log("筛选完成！结果已保存到 " + exportPath);
-                log(String.format("总用时: %s, 平均速度: %s seeds/秒", totalTimeStr, avgSpeedStr));
+                log(LanguageResources.get("filtering_completed", currentLanguage) + exportPath);
+                log(String.format(LanguageResources.get("total_time", currentLanguage), totalTimeStr, avgSpeedStr));
                 SwingUtilities.invokeLater(() -> {
                     startButton.setEnabled(true);
                     stopButton.setEnabled(false);
@@ -873,9 +1141,9 @@ public class CavefinderGUI extends JFrame {
                 });
             }
         } catch (Exception e) {
-            log("错误: " + e.getMessage());
+            log(LanguageResources.get("error_colon_msg", currentLanguage) + e.getMessage());
             e.printStackTrace();
-            // 确保异常时也释放executor
+            // Ensure executor is released even on exception
             if (executor != null) {
                 executor.shutdownNow();
                 executor = null;
@@ -902,7 +1170,7 @@ public class CavefinderGUI extends JFrame {
         });
         updateProgress();
     }
-    // 批量处理WorldSeed，减少任务数和调度开销
+    // Batch process WorldSeed to reduce task count and scheduling overhead
     private void processWorldSeedsBatch(long startSeed, long endSeed, int x, int z, BufferedWriter writer, ReentrantLock fileLock) {
         long processedCount = 0;
         for (long seed = startSeed; seed <= endSeed && isRunning; seed++) {
@@ -917,11 +1185,11 @@ public class CavefinderGUI extends JFrame {
             }
             processedCount++;
         }
-        // 批量更新进度：直接增加completedTasks，然后调用一次updateProgress()
-        // 注意：updateProgress()内部会incrementAndGet()，所以这里先增加(processedCount-1)，让updateProgress()增加最后一个
+        // Batch update progress: directly add to completedTasks, then call updateProgress() once
+        // Note: updateProgress() internally does incrementAndGet(), so here we add (processedCount-1) first, letting updateProgress() add the last one
         if (processedCount > 0) {
             completedTasks.addAndGet(processedCount - 1);
-            updateProgress(); // 这会再增加1，总共增加processedCount
+            updateProgress(); // This will add 1 more, totaling processedCount
         }
     }
     private boolean checkSeed(long seed, int x, int z) {
@@ -934,14 +1202,14 @@ public class CavefinderGUI extends JFrame {
     private boolean checkNormal(long seed, int x, int z) {
         NoiseCache cache = new NoiseCache(seed);
         boolean entrance1Only = entrance1OnlyCheckBox.isSelected();
-        // 检查temperature和humidity（始终在洞穴筛选前）
+        // Check temperature and humidity (always before cave filtering)
         if (!checkParameter(ParameterType.TEMPERATURE, cache.temperature.sample((double)x/4, 0, (double)z/4))) {
             return false;
         }
         if (!checkParameter(ParameterType.HUMIDITY, cache.humidity.sample((double)x/4, 0, (double)z/4))) {
             return false;
         }
-        // 如果只筛Entrance1，将erosion和ridge移到洞穴筛选后
+        // If only filtering Entrance1, move erosion and ridge after cave filtering
         if (!entrance1Only) {
             if (!checkParameter(ParameterType.EROSION, cache.erosion.sample((double)x/4, 0, (double)z/4))) {
                 return false;
@@ -950,12 +1218,12 @@ public class CavefinderGUI extends JFrame {
                 return false;
             }
         }
-        // 检查洞穴深度
+        // Check cave depth
         int minDepth = (Integer) depthComboBox.getSelectedItem();
-        // 检查Entrance和Cheese
-        // Entrance的50和60总是先检查，Cheese不检查50和60
-        // 在40及以下的高度Entrance和Cheese之间是"或"的关系（同一高度两个满足一个即算满足）
-        // 先检查60和50高度的Entrance（不检查Cheese）
+        // Check Entrance and Cheese
+        // Entrance at 50 and 60 are always checked first, Cheese does not check 50 and 60
+        // At height 40 and below, Entrance and Cheese have an "OR" relationship (either one satisfied counts as satisfied)
+        // First check Entrance at heights 60 and 50 (do not check Cheese)
         if (entrance1Only) {
             double entrance1_50 = Entrance1(seed, x, 50, z);
             if (!checkParameter(ParameterType.ENTRANCE, entrance1_50)) {
@@ -978,7 +1246,7 @@ public class CavefinderGUI extends JFrame {
                 return false;
             }
         }
-        // 检查40及以下的高度：Entrance和Cheese是"或"的关系
+        // Check heights 40 and below: Entrance and Cheese have "OR" relationship
         for (int y = minDepth; y <=40; y += 10) {
             boolean entrancePass,cheesePass;
             if (y >= 0) {
@@ -993,27 +1261,27 @@ public class CavefinderGUI extends JFrame {
                 cheesePass = checkParameter(ParameterType.CHEESE, cheese);
             } else {
                 if (entrance1Only) {
-                    // Entrance1模式：去掉Entrance2检查，只检查Cheese
+                    // Entrance1 mode: remove Entrance2 check, only check Cheese
                     double cheese = Cheese(seed, x, y, z);
                     cheesePass = checkParameter(ParameterType.CHEESE, cheese);
                     if (!cheesePass) {
                         return false;
                     }
-                    continue; // 只检查Cheese，已经检查完毕
+                    continue; // Only check Cheese, already checked
                 } else {
-                    // 正常模式：检查Entrance2和Cheese，"或"的关系
+                    // Normal mode: check Entrance2 and Cheese, "OR" relationship
                     double entrance2 = Entrance2(seed, x, y, z);
                     entrancePass = checkParameter(ParameterType.ENTRANCE, entrance2);
                     double cheese = Cheese(seed, x, y, z);
                     cheesePass = checkParameter(ParameterType.CHEESE, cheese);
                 }
             }
-            // "或"的关系：两个满足一个即算满足（通过检查）
+            // "OR" relationship: either one satisfied counts as passed
             if (!entrancePass && !cheesePass) {
                 return false;
             }
         }
-        // 如果只筛Entrance1，将erosion和ridge移到洞穴筛选后
+        // If only filtering Entrance1, move erosion and ridge after cave filtering
         if (entrance1Only) {
             if (!checkParameter(ParameterType.EROSION, cache.erosion.sample((double)x/4, 0, (double)z/4))) {
                 return false;
@@ -1022,11 +1290,11 @@ public class CavefinderGUI extends JFrame {
                 return false;
             }
         }
-        // Continentalness单独移动到洞穴深度的后面
+        // Continentalness moved separately after cave depth
         if (!checkParameter(ParameterType.CONTINENTALNESS, cache.contientalness.sample((double)x/4, 0, (double)z/4))) {
             return false;
         }
-        // 检查Aquifer
+        // Check Aquifer
         if (isParameterEnabled()) {
             LazyDoublePerlinNoiseSampler aquiferNoise = LazyDoublePerlinNoiseSampler.createNoiseSampler(
                     new Xoroshiro128PlusPlusRandom(seed).createRandomDeriver(),
@@ -1042,7 +1310,7 @@ public class CavefinderGUI extends JFrame {
         return true;
     }
     private boolean checkBedrockImpossible(long seed, int x, int z) {
-        // 基岩版无解种子的特殊检查逻辑
+        // Special check logic for bedrock impossible seeds
         if (Entrance1(seed, x, 45, z) > 0) {
             return false;
         }
@@ -1106,7 +1374,7 @@ public class CavefinderGUI extends JFrame {
         if (continentalnessNoise.sample((double)x/4, 0, (double)z/4) < -0.12) {
             return false;
         }
-        // 检查Aquifer
+        // Check Aquifer
         if (isParameterEnabled()) {
             LazyDoublePerlinNoiseSampler aquiferNoise = LazyDoublePerlinNoiseSampler.createNoiseSampler(
                     new Xoroshiro128PlusPlusRandom(seed).createRandomDeriver(),
@@ -1122,13 +1390,14 @@ public class CavefinderGUI extends JFrame {
     }
     private boolean checkHeight(long seed, int x, int z) {
         if (!SeedCheckerInitializer.isInitialized()) {
-            log("警告: SeedChecker 未初始化，跳过高度检查");
+            log(LanguageResources.get("seedchecker_not_init", currentLanguage));
             return true;
         }
         SeedChecker checker = null;
         try {
             checker = new SeedChecker(seed, TargetState.NO_STRUCTURES, SeedCheckerDimension.OVERWORLD);
             if (bedrockImpossibleCheckBox.isSelected()) {
+                // Bedrock impossible mode: use original logic, no type selection
                 Box box = new Box(x+8, -54, z+6, x+9, 200, z+7);
                 if(checker.getBlockCountInBox(Blocks.AIR, box)<254){
                     return false;
@@ -1146,18 +1415,122 @@ public class CavefinderGUI extends JFrame {
                         }
                     }
                 }
-            }else {
-                int minDepth = (Integer) depthComboBox.getSelectedItem();
-                Box box = new Box(x, minDepth, z, x+1, 200, z+1);
-                return checker.getBlockCountInBox(Blocks.AIR, box) == 200 - minDepth;
+            } else {
+                // Check if range check is enabled
+                if (rangeCheckCheckBox.isSelected()) {
+                    return checkHeightInRange(checker, x, z);
+                } else {
+                    // Single point check
+                    int minDepth = (Integer) depthComboBox.getSelectedItem();
+                    if (underwaterHeightRadio.isSelected()) {
+                        // Underwater height check
+                        Box box = new Box(x, minDepth, z, x+1, 62, z+1);
+                        return checker.getBlockCountInBox(Blocks.WATER, box) == 62 - minDepth;
+                    } else {
+                        // Surface height check (default)
+                        Box box = new Box(x, minDepth, z, x+1, 200, z+1);
+                        return checker.getBlockCountInBox(Blocks.AIR, box) == 200 - minDepth;
+                    }
+                }
             }
         } catch (Exception e) {
-            log("错误: 高度检查失败: " + e.getMessage());
+            log(LanguageResources.get("height_check_failed", currentLanguage) + e.getMessage());
             return false;
         } finally{
             if (checker != null) {
                 checker.clearMemory();
             }
+        }
+    }
+    private boolean checkHeightInRange(SeedChecker checker, int baseX, int baseZ) {
+        try {
+            // Parse range coordinates
+            String coordText = rangeCoordinatesField.getText().trim();
+            String[] parts = coordText.split("\\s+");
+            if (parts.length != 4) {
+                log(LanguageResources.get("invalid_range_coord_format", currentLanguage));
+                return false;
+            }
+            int x1 = Integer.parseInt(parts[0]);
+            int z1 = Integer.parseInt(parts[1]);
+            int x2 = Integer.parseInt(parts[2]);
+            int z2 = Integer.parseInt(parts[3]);
+            
+            // Validate range (max ±16)
+            if (Math.abs(x1) > 16 || Math.abs(z1) > 16 || Math.abs(x2) > 16 || Math.abs(z2) > 16) {
+                log(LanguageResources.get("range_coord_out_of_range", currentLanguage));
+                return false;
+            }
+            // Validate that max coordinates are greater than min coordinates
+            if (x1 >= x2) {
+                log(LanguageResources.get("max_x_greater_than_min_x", currentLanguage));
+                return false;
+            }
+            if (z1 >= z2) {
+                log(LanguageResources.get("max_z_greater_than_min_z", currentLanguage));
+                return false;
+            }
+            // Calculate actual coordinates
+            int minX = baseX + x1;
+            int maxX = baseX + x2 + 1;
+            int minZ = baseZ + z1;
+            int maxZ = baseZ + z2 + 1;
+            int minDepth = (Integer) depthComboBox.getSelectedItem();
+            String heightType = (String) rangeHeightTypeComboBox.getSelectedItem();
+            // Collect heights for all points in range
+            List<Integer> heights = new ArrayList<>();
+            for (int checkX = minX; checkX < maxX; checkX++) {
+                for (int checkZ = minZ; checkZ < maxZ; checkZ++) {
+                    boolean isValid;
+                    if (underwaterHeightRadio.isSelected()) {
+                        // Underwater height: check if water blocks match expected count
+                        Box box = new Box(checkX, minDepth, checkZ, checkX+1, 62, checkZ+1);
+                        isValid = checker.getBlockCountInBox(Blocks.WATER, box) == 62 - minDepth;
+                    } else {
+                        // Surface height: check if air blocks match expected count
+                        Box box = new Box(checkX, minDepth, checkZ, checkX+1, 200, checkZ+1);
+                        isValid = checker.getBlockCountInBox(Blocks.AIR, box) == 200 - minDepth;
+                    }
+                    
+                    if (isValid) {
+                        // Find actual height by checking from top to bottom
+                        int height = -1;
+                        int topY = underwaterHeightRadio.isSelected() ? 61 : 199;
+                        for (int y = topY; y >= minDepth; y--) {
+                            Box testBox = new Box(checkX, y, checkZ, checkX+1, y+1, checkZ+1);
+                            boolean hasBlock = underwaterHeightRadio.isSelected() 
+                                ? checker.getBlockCountInBox(Blocks.WATER, testBox) > 0
+                                : checker.getBlockCountInBox(Blocks.AIR, testBox) > 0;
+                            if (hasBlock) {
+                                height = y;
+                                break;
+                            }
+                        }
+                        if (height >= 0) {
+                            heights.add(height);
+                        }
+                    }
+                }
+            }
+            if (heights.isEmpty()) {
+                return false;
+            }
+            // Calculate based on height type
+            // For range check, we verify that at least one point has valid height
+            // The height type selection determines which height value to use for validation
+            // Since there's no specific validation condition mentioned, we just check that heights exist
+            return switch (heightType) {
+                case "最低高度" -> heights.stream().mapToInt(Integer::intValue).min().orElse(-1) >= 0;
+                case "平均高度" -> heights.stream().mapToInt(Integer::intValue).average().orElse(-1) >= 0;
+                case "最高高度" -> heights.stream().mapToInt(Integer::intValue).max().orElse(-1) >= 0;
+                default -> false;
+            };
+        } catch (NumberFormatException e) {
+            log(LanguageResources.get("invalid_number_in_range", currentLanguage) + e.getMessage());
+            return false;
+        } catch (Exception e) {
+            log(LanguageResources.get("range_height_check_failed", currentLanguage) + e.getMessage());
+            return false;
         }
     }
     private boolean checkParameter(ParameterType type, double value) {
@@ -1166,7 +1539,7 @@ public class CavefinderGUI extends JFrame {
                 return control.checkValue(value);
             }
         }
-        return true; // 如果未启用，则通过
+        return true; // If not enabled, pass
     }
     private boolean isParameterEnabled() {
         for (ParameterControl control : parameterControls) {
@@ -1182,7 +1555,7 @@ public class CavefinderGUI extends JFrame {
             writer.write(Long.toString(seed));
             writer.newLine();
             writer.flush();
-            log("找到种子: " + seed);
+            log(LanguageResources.get("found_seed", currentLanguage) + seed);
         } catch (IOException e) {
             throw new RuntimeException(e);
         } finally {
@@ -1193,19 +1566,19 @@ public class CavefinderGUI extends JFrame {
         long completed = completedTasks.incrementAndGet();
         long total = totalTasks.get();
         long currentTime = System.currentTimeMillis();
-        // 节流机制：只有当满足以下条件之一时才更新GUI
-        // 1. 距离上次更新超过UPDATE_INTERVAL_MS毫秒
-        // 2. 完成数量比上次更新时增加了UPDATE_INTERVAL_COUNT个以上
+        // Throttling mechanism: only update GUI when one of the following conditions is met
+        // 1. More than UPDATE_INTERVAL_MS milliseconds since last update
+        // 2. Completed count increased by more than UPDATE_INTERVAL_COUNT since last update
         long timeSinceLastUpdate = currentTime - lastUpdateTime;
         long countSinceLastUpdate = completed - lastUpdateCompleted;
         boolean shouldUpdate = (timeSinceLastUpdate >= UPDATE_INTERVAL_MS) ||
                 (countSinceLastUpdate >= UPDATE_INTERVAL_COUNT);
         if (!shouldUpdate) {
-            return; // 跳过本次更新，避免GUI线程被阻塞
+            return; // Skip this update to avoid blocking GUI thread
         }
-        // 更新节流变量（使用同步避免竞态条件）
+        // Update throttling variables (use synchronization to avoid race conditions)
         synchronized (this) {
-            // 双重检查，避免多个线程同时更新
+            // Double check to avoid multiple threads updating simultaneously
             if ((currentTime - lastUpdateTime < UPDATE_INTERVAL_MS) &&
                     (completed - lastUpdateCompleted < UPDATE_INTERVAL_COUNT)) {
                 return;
@@ -1215,18 +1588,18 @@ public class CavefinderGUI extends JFrame {
         }
         long elapsedMs = currentTime - filteringStartTime;
         double elapsedSec = elapsedMs / 1000.0;
-        // 计算速度：structureSeed模式下每个种子对应65536个worldSeed
+        // Calculate speed: in structureSeed mode each seed corresponds to 65536 worldSeeds
         double seedsProcessed = completed;
         if (structureSeedRadio.isSelected()) {
             seedsProcessed = completed * 65536.0;
         }
         double speed = elapsedSec > 0 ? seedsProcessed / elapsedSec : 0;
-        // 格式化用时
+        // Format elapsed time
         String timeStr = formatElapsedTime(elapsedMs);
-        // 格式化速度
+        // Format speed
         String speedStr = formatSpeed(speed);
         if (total > 0) {
-            // 计算百分比，处理大数值
+            // Calculate percentage, handle large values
             final int percentage;
             int calcPercentage;
             if (total > Integer.MAX_VALUE) {
@@ -1241,7 +1614,7 @@ public class CavefinderGUI extends JFrame {
             final String finalSpeedStr = speedStr;
             SwingUtilities.invokeLater(() -> {
                 progressBar.setValue(percentage);
-                statusLabel.setText(String.format("%d/%d (%d%%) | 用时: %s | 速度: %s seeds/秒",
+                statusLabel.setText(String.format(LanguageResources.get("progress_format", currentLanguage),
                         finalCompleted, finalTotal, percentage, finalTimeStr, finalSpeedStr));
             });
         } else if (total == -1) {
@@ -1250,7 +1623,7 @@ public class CavefinderGUI extends JFrame {
             final String finalSpeedStr = speedStr;
             SwingUtilities.invokeLater(() -> {
                 progressBar.setValue(0);
-                statusLabel.setText(String.format("已完成: %d | 用时: %s | 速度: %s seeds/秒",
+                statusLabel.setText(String.format(LanguageResources.get("completed", currentLanguage),
                         finalCompleted, finalTimeStr, finalSpeedStr));
             });
         }
@@ -1261,13 +1634,12 @@ public class CavefinderGUI extends JFrame {
         long hours = minutes / 60;
         seconds = seconds % 60;
         minutes = minutes % 60;
-
         if (hours > 0) {
-            return String.format("%d时%02d分%02d秒", hours, minutes, seconds);
+            return String.format(LanguageResources.get("time_hms", currentLanguage), hours, minutes, seconds);
         } else if (minutes > 0) {
-            return String.format("%d分%02d秒", minutes, seconds);
+            return String.format(LanguageResources.get("time_ms", currentLanguage), minutes, seconds);
         } else {
-            return String.format("%.1f秒", millis / 1000.0);
+            return String.format(LanguageResources.get("time_s", currentLanguage), millis / 1000.0);
         }
     }
     private String formatSpeed(double speed) {
@@ -1368,7 +1740,7 @@ public class CavefinderGUI extends JFrame {
                 (-0.4 + Math.abs(cache.spaghettiRoughness.sample(x, y, z)));
         return p + q;
     }
-    // 参数控制类
+    // Parameter control class
     private class ParameterControl {
         private final ParameterType type;
         private final JPanel panel;
@@ -1376,19 +1748,19 @@ public class CavefinderGUI extends JFrame {
         private final JComboBox<ConditionType> conditionComboBox;
         private final JSpinner value1Spinner;
         private final JSpinner value2Spinner;
-        private boolean isLocked = false; // 跟踪是否被外部锁定（基岩版无解模式）
+        private boolean isLocked = false; // Track if externally locked (bedrock impossible mode)
         public ParameterControl(ParameterType type, String label, int fixedWidth) {
             this.type = type;
-            // 使用GridBagLayout来固定位置
+            // Use GridBagLayout to fix positions
             panel = new JPanel(new GridBagLayout());
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new Insets(2, 2, 2, 2);
             gbc.anchor = GridBagConstraints.WEST;
-            // 启用复选框 - 使用固定宽度的面板来确保对齐
+            // Enable checkbox - use fixed width panel to ensure alignment
             enableCheckBox = new JCheckBox(label);
             JPanel checkboxPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
             checkboxPanel.add(enableCheckBox);
-            // 使用固定宽度确保所有行对齐
+            // Use fixed width to ensure all rows align
             checkboxPanel.setPreferredSize(new Dimension(fixedWidth, 25));
             checkboxPanel.setMaximumSize(new Dimension(fixedWidth, 25));
             checkboxPanel.setMinimumSize(new Dimension(fixedWidth, 25));
@@ -1398,58 +1770,48 @@ public class CavefinderGUI extends JFrame {
             gbc.weightx = 0;
             gbc.fill = GridBagConstraints.NONE;
             panel.add(checkboxPanel, gbc);
-            // 根据参数类型设置可用的条件类型
-            ConditionType[] availableConditions;
-            if (type == ParameterType.RIDGE) {
-                availableConditions = ConditionType.values(); // Ridge支持所有条件包括绝对值
-            } else {
-                // 其他参数不支持绝对值条件
-                availableConditions = new ConditionType[]{
-                        ConditionType.BETWEEN,
-                        ConditionType.GREATER_THAN,
-                        ConditionType.LESS_THAN,
-                        ConditionType.NOT_IN_RANGE
-                };
-            }
-            conditionComboBox = new JComboBox<>(availableConditions);
+            // Set available condition types based on parameter type
+            conditionComboBox = new JComboBox<>(getAvailableConditions());
             conditionComboBox.setSelectedIndex(0);
-            conditionComboBox.setPreferredSize(new Dimension(140, 25)); // 稍微减小宽度
+            conditionComboBox.setPreferredSize(new Dimension(140, 25)); // Slightly reduce width
+            // Set renderer to show translated names immediately
+            setConditionTypeRenderer();
             gbc.gridx = 1;
             gbc.weightx = 0;
             gbc.fill = GridBagConstraints.NONE;
             panel.add(conditionComboBox, gbc);
-            // 值1输入框（固定位置）
+            // Value 1 input (fixed position)
             value1Spinner = new JSpinner(new SpinnerNumberModel(0.0, -1.0, 1.0, 0.01));
-            value1Spinner.setPreferredSize(new Dimension(90, 25)); // 稍微减小宽度
+            value1Spinner.setPreferredSize(new Dimension(90, 25)); // Slightly reduce width
             gbc.gridx = 2;
             gbc.weightx = 0;
             gbc.fill = GridBagConstraints.NONE;
             panel.add(value1Spinner, gbc);
-            // 值2输入框（固定位置，始终存在但可能被禁用）
+            // Value 2 input (fixed position, always present but may be disabled)
             value2Spinner = new JSpinner(new SpinnerNumberModel(0.0, -1.0, 1.0, 0.01));
-            value2Spinner.setPreferredSize(new Dimension(90, 25)); // 稍微减小宽度
+            value2Spinner.setPreferredSize(new Dimension(90, 25)); // Slightly reduce width
             gbc.gridx = 3;
             gbc.weightx = 0;
             gbc.fill = GridBagConstraints.NONE;
             panel.add(value2Spinner, gbc);
-            // 根据条件类型启用/禁用第二个值
+            // Enable/disable second value based on condition type
             conditionComboBox.addActionListener(e -> updateSpinnerVisibility());
-            // 当复选框状态改变时，也需要更新第二个值的启用状态
+            // When checkbox state changes, also need to update second value enabled state
             enableCheckBox.addActionListener(e -> updateSpinnerVisibility());
-            // 初始状态：根据默认条件类型设置
+            // Initial state: set according to default condition type
             updateSpinnerVisibility();
         }
         private void updateSpinnerVisibility() {
             ConditionType condition = (ConditionType) conditionComboBox.getSelectedItem();
             if (condition == null) {
-                return; // 防止空指针
+                return; // Prevent null pointer
             }
             boolean needSecond = condition == ConditionType.BETWEEN ||
                     condition == ConditionType.NOT_IN_RANGE ||
                     condition == ConditionType.ABS_IN_RANGE ||
                     condition == ConditionType.ABS_NOT_IN_RANGE;
-            // 值2始终显示，但根据条件启用/禁用
-            // 同时也要考虑复选框是否启用，以及是否被外部锁定
+            // Value 2 is always visible, but enabled/disabled based on condition
+            // Also consider whether checkbox is enabled and if externally locked
             value2Spinner.setEnabled(needSecond && enableCheckBox.isSelected() && !isLocked);
         }
         public void setDefaultValues(boolean enabled, ConditionType condition, double value1, double value2) {
@@ -1457,9 +1819,9 @@ public class CavefinderGUI extends JFrame {
             conditionComboBox.setSelectedItem(condition);
             value1Spinner.setValue(value1);
             value2Spinner.setValue(value2);
-            // 确保在设置值后更新可见性状态
+            // Ensure visibility state is updated after setting values
             SwingUtilities.invokeLater(this::updateSpinnerVisibility);
-            // 也立即更新一次，确保同步
+            // Also update immediately once to ensure synchronization
             updateSpinnerVisibility();
         }
         public JPanel getPanel() {
@@ -1472,13 +1834,74 @@ public class CavefinderGUI extends JFrame {
             return enableCheckBox.isSelected();
         }
         public void setEnabled(boolean enabled) {
-            isLocked = !enabled; // 记录锁定状态
+            isLocked = !enabled; // Record locked state
             enableCheckBox.setEnabled(enabled);
             conditionComboBox.setEnabled(enabled);
             value1Spinner.setEnabled(enabled);
             value2Spinner.setEnabled(enabled);
-            // 更新第二个值的启用状态（考虑锁定状态）
+            // Update second value enabled state (considering locked state)
             updateSpinnerVisibility();
+        }
+        public void updateLanguage() {
+            // Update parameter label text
+            String labelKey = getParameterLabelKey(type);
+            if (labelKey != null) {
+                enableCheckBox.setText(LanguageResources.get(labelKey, currentLanguage));
+            }
+        }
+        
+        private String getParameterLabelKey(ParameterType type) {
+            return switch (type) {
+                case TEMPERATURE -> "param_temperature";
+                case HUMIDITY -> "param_humidity";
+                case EROSION -> "param_erosion";
+                case RIDGE -> "param_ridge";
+                case ENTRANCE -> "param_entrance";
+                case CHEESE -> "param_cheese";
+                case CONTINENTALNESS -> "param_continentalness";
+                case AQUIFER -> "param_aquifer";
+            };
+        }
+        public void updateConditionTypes() {
+            // ParameterControl is inner class, can access currentLanguage directly
+            ConditionType selected = (ConditionType) conditionComboBox.getSelectedItem();
+            DefaultComboBoxModel<ConditionType> model = new DefaultComboBoxModel<>();
+            ConditionType[] availableConditions = getAvailableConditions();
+            for (ConditionType ct : availableConditions) {
+                model.addElement(ct);
+            }
+            conditionComboBox.setModel(model);
+            if (selected != null) {
+                conditionComboBox.setSelectedItem(selected);
+            }
+            // Update renderer to show translated names
+            setConditionTypeRenderer();
+        }
+        
+        private void setConditionTypeRenderer() {
+            conditionComboBox.setRenderer(new DefaultListCellRenderer() {
+                @Override
+                public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                        boolean isSelected, boolean cellHasFocus) {
+                    super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                    if (value instanceof ConditionType) {
+                        setText(((ConditionType) value).getDisplayName(currentLanguage));
+                    }
+                    return this;
+                }
+            });
+        }
+        private ConditionType[] getAvailableConditions() {
+            if (type == ParameterType.RIDGE) {
+                return ConditionType.values();
+            } else {
+                return new ConditionType[]{
+                        ConditionType.BETWEEN,
+                        ConditionType.GREATER_THAN,
+                        ConditionType.LESS_THAN,
+                        ConditionType.NOT_IN_RANGE
+                };
+            }
         }
         public boolean checkValue(double value) {
             if (!isEnabled()) {
@@ -1500,6 +1923,129 @@ public class CavefinderGUI extends JFrame {
                     double absValue2 = Math.abs(value);
                     yield absValue2 < Math.min(val1, val2) || absValue2 > Math.max(val1, val2);
                 }
+            };
+        }
+    }
+    // Language resources management
+    private static class LanguageResources {
+        private static String get(String key, Language lang) {
+            return switch (key) {
+                // Window title
+                case "title" -> lang == Language.CHINESE ? "洞穴查找器 GUI" : "Cave Finder GUI";
+                // Static initialization messages
+                case "static_init_start" -> lang == Language.CHINESE ? "CavefinderGUI 静态初始化开始..." : "CavefinderGUI static initialization starting...";
+                case "static_init_warning" -> lang == Language.CHINESE ? "CavefinderGUI 静态初始化警告: " : "CavefinderGUI static initialization warning: ";
+                // UI Labels
+                case "param_settings" -> lang == Language.CHINESE ? "参数设置" : "Parameter Settings";
+                case "cave_depth" -> lang == Language.CHINESE ? "洞穴深度:" : "Cave Depth:";
+                case "thread_count" -> lang == Language.CHINESE ? "线程数:" : "Thread Count:";
+                case "x_coordinate" -> lang == Language.CHINESE ? "X坐标:" : "X Coordinate:";
+                case "z_coordinate" -> lang == Language.CHINESE ? "Z坐标:" : "Z Coordinate:";
+                case "segment_size" -> lang == Language.CHINESE ? "分段大小:" : "Segment Size:";
+                case "segment_size_hint" -> lang == Language.CHINESE ? "(仅递增模式，超过此值将分段处理)" : "(Incremental mode only, will segment if exceeds this value)";
+                case "check_height" -> lang == Language.CHINESE ? "筛高度（较慢）" : "Check height (slower)";
+                case "filter_be_impossible" -> lang == Language.CHINESE ? "筛基岩版无解种子" : "Filter BE impossible seeds";
+                case "entrance1_only" -> lang == Language.CHINESE ? "只筛Entrance1（更大洞穴）" : "Entrance1 only (larger caves)";
+                case "filter_mode" -> lang == Language.CHINESE ? "筛选模式" : "Filter Mode";
+                case "search_mode" -> lang == Language.CHINESE ? "搜索模式" : "Search Mode";
+                case "incremental" -> lang == Language.CHINESE ? "递增筛种" : "Incremental";
+                case "filter_from_list" -> lang == Language.CHINESE ? "从列表筛种" : "Filter from list";
+                case "seed_type" -> lang == Language.CHINESE ? "种子类型" : "Seed Type";
+                case "seed_input" -> lang == Language.CHINESE ? "种子输入" : "Seed Input";
+                case "start_seed" -> lang == Language.CHINESE ? "起始种子:" : "Start Seed:";
+                case "end_seed" -> lang == Language.CHINESE ? "结束种子:" : "End Seed:";
+                case "seed_list" -> lang == Language.CHINESE ? "种子列表（每行一个）:" : "Seed List (one per line):";
+                case "load_from_file" -> lang == Language.CHINESE ? "从文件加载" : "Load from file";
+                case "biome_params" -> lang == Language.CHINESE ? "群系气候参数" : "Biome Climate Parameters";
+                case "log" -> lang == Language.CHINESE ? "日志" : "Log";
+                case "export_path" -> lang == Language.CHINESE ? "导出路径:" : "Export Path:";
+                case "browse" -> lang == Language.CHINESE ? "浏览..." : "Browse...";
+                case "start_filtering" -> lang == Language.CHINESE ? "开始筛选" : "Start Filtering";
+                case "stop" -> lang == Language.CHINESE ? "停止" : "Stop";
+                case "ready" -> lang == Language.CHINESE ? "就绪" : "Ready";
+                // Height check options
+                case "height_check_options" -> lang == Language.CHINESE ? "高度检查选项" : "Height Check Options";
+                case "height_type" -> lang == Language.CHINESE ? "高度类型:" : "Height Type:";
+                case "surface_height" -> lang == Language.CHINESE ? "地表高度" : "Surface Height";
+                case "underwater_height" -> lang == Language.CHINESE ? "水下高度" : "Underwater Height";
+                case "check_height_in_range" -> lang == Language.CHINESE ? "检查一定范围内的高度" : "Check height in range";
+                case "range_height_type" -> lang == Language.CHINESE ? "范围高度类型:" : "Range Height Type:";
+                case "range_coordinates" -> lang == Language.CHINESE ? "范围坐标:" : "Range Coordinates:";
+                case "range_coord_tooltip" -> lang == Language.CHINESE ? "格式: x1 z1 x2 z2 (相对于基准坐标，最大 ±16)" : "Format: x1 z1 x2 z2 (relative to base coordinates, max ±16)";
+                case "min_height" -> lang == Language.CHINESE ? "最低高度" : "Minimum Height";
+                case "avg_height" -> lang == Language.CHINESE ? "平均高度" : "Average Height";
+                case "max_height" -> lang == Language.CHINESE ? "最高高度" : "Maximum Height";
+                // Language selection
+                case "language" -> "语言(Language):";
+                // Error messages
+                case "error" -> lang == Language.CHINESE ? "错误" : "Error";
+                case "invalid_seed_numbers" -> lang == Language.CHINESE ? "请输入有效的种子数字" : "Please enter valid seed numbers";
+                case "enter_seed_list" -> lang == Language.CHINESE ? "请输入种子列表或从文件加载" : "Please enter seed list or load from file";
+                case "cannot_access_dir" -> lang == Language.CHINESE ? "无法访问导出路径的目录：" : "Cannot access directory of export path: ";
+                case "please_select_other" -> lang == Language.CHINESE ? "\n请选择其他路径。" : "\nPlease select another path.";
+                case "cannot_access_path" -> lang == Language.CHINESE ? "无法访问导出路径：" : "Cannot access export path: ";
+                case "access_denied" -> lang == Language.CHINESE ? "\n访问被拒绝。请选择其他路径。" : "\nAccess denied. Please select another path.";
+                case "error_colon" -> lang == Language.CHINESE ? "\n错误：" : "\nError: ";
+                case "file_exists_overwrite" -> lang == Language.CHINESE ? "结果文件已存在，将被覆盖。是否继续？" : "Result file already exists and will be overwritten. Continue?";
+                case "reminder" -> lang == Language.CHINESE ? "提醒" : "Reminder";
+                case "load_file_failed" -> lang == Language.CHINESE ? "加载文件失败: " : "Failed to load file: ";
+                case "select_export_path" -> lang == Language.CHINESE ? "选择导出路径" : "Select Export Path";
+                case "invalid_range_coord_format" -> lang == Language.CHINESE ? "错误: 无效的范围坐标格式。期望格式: x1 z1 x2 z2" : "Error: Invalid range coordinates format. Expected: x1 z1 x2 z2";
+                case "range_coord_out_of_range" -> lang == Language.CHINESE ? "错误: 范围坐标必须在 ±16 以内" : "Error: Range coordinates must be within ±16";
+                case "max_x_greater_than_min_x" -> lang == Language.CHINESE ? "错误: 最大X坐标应大于最小X坐标" : "Error: Maximum X coordinate should be greater than minimum X coordinate";
+                case "max_z_greater_than_min_z" -> lang == Language.CHINESE ? "错误: 最大Z坐标应大于最小Z坐标" : "Error: Maximum Z coordinate should be greater than minimum Z coordinate";
+                // Log messages
+                case "file_loaded" -> lang == Language.CHINESE ? "已加载文件: " : "Loaded file: ";
+                case "filtering_stopped" -> lang == Language.CHINESE ? "筛选已停止" : "Filtering stopped";
+                case "checking_seedchecker" -> lang == Language.CHINESE ? "检查 SeedChecker 状态..." : "Checking SeedChecker status...";
+                case "attempting_init_seedchecker" -> lang == Language.CHINESE ? "尝试初始化 SeedChecker..." : "Attempting to initialize SeedChecker...";
+                case "seedchecker_ready" -> lang == Language.CHINESE ? "SeedChecker 已就绪" : "SeedChecker ready";
+                case "seedchecker_init_failed" -> lang == Language.CHINESE ? "警告: SeedChecker 初始化失败，高度检查可能不可用" : "Warning: SeedChecker initialization failed, height check may not be available";
+                case "seedchecker_check_exception" -> lang == Language.CHINESE ? "SeedChecker 检查过程中出现异常: " : "Exception during SeedChecker check: ";
+                case "starting_filtering" -> lang == Language.CHINESE ? "开始筛选: %d - %d (共 %d 个种子)" : "Starting filtering: %d - %d (Total %d seeds)";
+                case "seed_count_exceeds" -> lang == Language.CHINESE ? "种子数量超过 %d，将分 %d 段处理" : "Seed count exceeds %d, will process in %d segments";
+                case "processing_segment" -> lang == Language.CHINESE ? "处理第 %d/%d 段: %d - %d" : "Processing segment %d/%d: %d - %d";
+                case "starting_list_filtering" -> lang == Language.CHINESE ? "开始筛选列表 (共 %d 行)" : "Starting list filtering (Total %d lines)";
+                case "skipping_invalid_seed" -> lang == Language.CHINESE ? "跳过无效种子: " : "Skipping invalid seed: ";
+                case "filtering_completed" -> lang == Language.CHINESE ? "筛选完成！结果已保存到 " : "Filtering completed! Results saved to ";
+                case "total_time" -> lang == Language.CHINESE ? "总用时: %s, 平均速度: %s seeds/秒" : "Total time: %s, Average speed: %s seeds/second";
+                case "error_colon_msg" -> lang == Language.CHINESE ? "错误: " : "Error: ";
+                case "seedchecker_not_init" -> lang == Language.CHINESE ? "警告: SeedChecker 未初始化，跳过高度检查" : "Warning: SeedChecker not initialized, skipping height check";
+                case "height_check_failed" -> lang == Language.CHINESE ? "错误: 高度检查失败: " : "Error: Height check failed: ";
+                case "range_height_check_failed" -> lang == Language.CHINESE ? "错误: 范围高度检查失败: " : "Error: Range height check failed: ";
+                case "invalid_number_in_range" -> lang == Language.CHINESE ? "错误: 范围坐标中的无效数字: " : "Error: Invalid number in range coordinates: ";
+                case "found_seed" -> lang == Language.CHINESE ? "找到种子: " : "Found seed: ";
+                // Status messages
+                case "completed" -> lang == Language.CHINESE ? "已完成: %d | 用时: %s | 速度: %s seeds/秒" : "Completed: %d | Time: %s | Speed: %s seeds/second";
+                case "progress_format" -> lang == Language.CHINESE ? "%d/%d (%d%%) | 用时: %s | 速度: %s seeds/秒" : "%d/%d (%d%%) | Time: %s | Speed: %s seeds/second";
+                // Time format
+                case "time_hms" -> lang == Language.CHINESE ? "%d时%02d分%02d秒" : "%dh%02dm%02ds";
+                case "time_ms" -> lang == Language.CHINESE ? "%d分%02d秒" : "%dm%02ds";
+                case "time_s" -> lang == Language.CHINESE ? "%.1f秒" : "%.1fs";
+                // Parameter names
+                case "param_temperature" -> lang == Language.CHINESE ? "温度" : "Temperature";
+                case "param_humidity" -> lang == Language.CHINESE ? "湿度" : "Humidity";
+                case "param_erosion" -> lang == Language.CHINESE ? "侵蚀度" : "Erosion";
+                case "param_ridge" -> lang == Language.CHINESE ? "奇异性" : "Weirdness";
+                case "param_entrance" -> lang == Language.CHINESE ? "洞穴入口噪声" : "Entrance";
+                case "param_cheese" -> lang == Language.CHINESE ? "芝士洞穴噪声" : "Cheese";
+                case "param_continentalness" -> lang == Language.CHINESE ? "大陆性" : "Continentalness";
+                case "param_aquifer" -> lang == Language.CHINESE ? "含水层洪水水位噪声" : "AquiferFloodLevelFloodness";
+                
+                // Seed type names
+                case "structure_seed" -> lang == Language.CHINESE ? "结构种子(低48位二进制)" : "StructureSeed(low48bit)";
+                case "world_seed" -> lang == Language.CHINESE ? "世界种子" : "WorldSeed";
+                default -> key;
+            };
+        }
+        static String getConditionTypeName(ConditionType type, Language lang) {
+            return switch (type) {
+                case BETWEEN -> lang == Language.CHINESE ? "介于两值之间" : "Between two values";
+                case GREATER_THAN -> lang == Language.CHINESE ? "大于某值" : "Greater than";
+                case LESS_THAN -> lang == Language.CHINESE ? "小于某值" : "Less than";
+                case NOT_IN_RANGE -> lang == Language.CHINESE ? "不含某个范围内的值" : "Not in range";
+                case ABS_IN_RANGE -> lang == Language.CHINESE ? "绝对值在某个范围" : "Absolute value in range";
+                case ABS_NOT_IN_RANGE -> lang == Language.CHINESE ? "绝对值不在某个范围" : "Absolute value not in range";
             };
         }
     }

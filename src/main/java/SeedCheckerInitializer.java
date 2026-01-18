@@ -13,13 +13,13 @@ public class SeedCheckerInitializer {
                 return;
             }
             try {
-                System.out.println("初始化 SeedChecker...");
+                System.out.println("Initializing SeedChecker...");
                 SeedChecker preInit = new SeedChecker(0L, TargetState.NO_STRUCTURES, SeedCheckerDimension.OVERWORLD);
                 preInit.clearMemory();
                 initialized = true;
-                System.out.println("SeedChecker 初始化成功");
+                System.out.println("SeedChecker Initialize successfully");
             } catch (Exception e) {
-                System.err.println("SeedChecker 初始化失败: " + e.getMessage());
+                System.err.println("SeedChecker Initialize failed: " + e.getMessage());
                 initialized = true;
             }
         }

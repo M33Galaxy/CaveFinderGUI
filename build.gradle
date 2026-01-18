@@ -54,7 +54,7 @@ task CaveFinderJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.Shadow
     description = 'Creates a fat JAR for CaveFinder'
     archiveBaseName.set('CaveFinderGUI')
     archiveClassifier.set('')
-    archiveVersion.set("1.0.3")
+    archiveVersion.set("1.1.0")
     from sourceSets.main.output
     configurations = [project.configurations.runtimeClasspath]
     manifest {
