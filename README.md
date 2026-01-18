@@ -20,6 +20,8 @@ You can change the -Xms2048m -Xmx4096m to the memory amount you want. But I sugg
 
 ## **How to use?**
 
+Use **语言(Language)** on top-right to switch language. You can choose Chinese or English. 
+
 Use the **Start Filtering** button to start filtering, and **Stop** Button to stop filtering.
 
 The top-left part is **Parameter Settings**, including:
@@ -40,13 +42,19 @@ For structureseed search you probably won't care about this, because it searches
 
 **Entrance1 Only**: It's faster, and more likely to give you larger exposed caves (will ignore some small deep caves).
 
+The second part is **Height Check Options**. This part only available when you enable **Check Height**.
+
+**Height Type**: **Surface Height** means the height of the top of highest non-air block. Choose this if you want to get a non-waterlogged cave (you need a non-waterlogged cave for low spawns and low surface structures). **Underwater Height** means the height of the highest non-water block in a waterlogged cave (like in a river or an ocean), it corresponds to the depth of water. If you want to have very deep waterlogged cave, you would better to set the **AquiferFloodLevelFloodness** to **Greater Than** and set a higher value for it (like 0.5 or 0.7).
+
+**Check Height In Range**: You can set the range of height checking by editing **Range Coordinates**. The format of it is **"minX minZ maxX maxZ"**. The coords are relatived to your search coords. For example, if you set it to "-5 -3 5 3" and your searching coordinate is set to (X,Z), it will check height within the coords ranged from (X-5,Z-3) to (X+5,Z+3). **The coords are exact position, not block position, so if you need to check height within the block position (X-5,Z-3) to (X+5,Z+3), you should set it to "-5 -3 6 4" instead.** The range can only set within ±16 blocks. You can set the **Range Height Type** to check the lowest, average or highest height in the range.
+
 Next part is **Filter Mode**.
 
 **Incremental**: Incrementally searching from a seed range in "Seed Input".
 
 **Filter from list** : Searching from a seed list. You can load it from file.
 
-**StructureSeed** : Searches for the seeds in the range/seed list and their sister seeds (low 48 bits same but high 16 bits different, 65536 in total). Sister seeds has same potential structure coords and almost same nether and end dimension. Choosing this is much better if you want to search for a structure in cave (e.g. villages, outposts, igloos) , just use cubiomes-viewer to search for low-48 bit seeds that has these structures and load them as a file into this program.
+**StructureSeed(low48bit)** : Searches for the seeds in the range/seed list and their sister seeds (low 48 bits same but high 16 bits different, 65536 in total). Sister seeds has same potential structure coords and almost same nether and end dimension. Choosing this is much better if you want to search for a structure in cave (e.g. villages, outposts, igloos) , just use cubiomes-viewer to search for low-48 bit seeds that has these structures and load them as a file into this program.
 
 **WorldSeed** : Only Search for the seeds in the range/seed list.
 
@@ -58,8 +66,8 @@ The Bottom-left part is **Seed Input**.
 
 The top-right part is **Biome Climate Parameters**.
 
-It includes 8 types. **Temperature, Humidity, Erosion, Ridge(Weirdness), Continentalness** determines the biome. It's better to add these climate parameters if you want to search an exposed cave in specific biome. They are searching in order of fastest to slowest in the program (Temperature, Humidity, Erosion and Ridge(Weirdness) are faster than complete cave entrance checking, though erosion and weirdness are still slower than entrance1). You can search on the Minecraft Wiki to look for the biome climate parameter condition for the biome you need. Structures' generation also determines on 
-biomes. Weirdness betweeen -0.05 and 0.05 mostly means rivers, Continentalness below -0.19 means ocean, for better avoiding waterlogged caves I set the default excluding weirdness to between -0.16 and 0.16, and default excluding continalness to below -0.11.
+It includes 8 types. **Temperature, Humidity, Erosion, Weirdness, Continentalness** determines the biome. It's better to add these climate parameters if you want to search an exposed cave in specific biome. They are searching in order of fastest to slowest in the program (Temperature, Humidity, Erosion and Weirdness are faster than complete cave entrance checking, though erosion and weirdness are still slower than entrance1). You can search on the Minecraft Wiki to look for the biome climate parameter condition for the biome you need. Structures' generation also determines on 
+biomes. Weirdness betweeen -0.05 and 0.05 mostly means rivers, Continentalness below -0.19 means ocean, if you want to search for non-waterlogged cave, I suggest you to exclude weirdness values between -0.16 and 0.16 and continetalness below -0.11, which is the default settings.
 
 **Entrance, Cheese and AquiferFloodlevelFloodness** aren't Biome Climate Parameters, but they are still here for advanced searching. Normally, Entrance and Cheese <0 means caves, and 99% non-waterlogged exposed caves generates at AquiferFloodlevelFloodness below 0.4. Lower Entrance and Cheese might means larger caves, and lower AquiferFloodlevelFloodness might means less chance to get waterlogged caves.
 
@@ -108,6 +116,8 @@ https://github.com/KalleStruik
 
 ## 如何使用？
 
+用右上角的 **语言(Language)** 切换语言。你可以选择中文或英文。 
+
 点击**开始筛选**按钮启动筛选，点击**停止**按钮结束筛选。
 
 左上角为**参数设置**区域，包含：
@@ -133,13 +143,19 @@ https://github.com/KalleStruik
 
 **只筛Entrance1**：速度更快，更容易发现大型露天洞穴（会忽略部分小型深层洞穴）
 
+第二部分是**高度检查选项**。此部分仅在启用**检查高度**时可用。
+
+**高度类型**：**地表高度**指的是该位置最高非空气方块顶部的高度。如果您要筛一个非含水洞穴（非含水洞穴对于筛选洞穴底部的出生点和地表结构来说是必要的），请选择此选项。**水下高度**指的是含水洞穴（如河流或海洋中）中最高非水方块的高度，它和水深相对应。如果您要筛选一个非常深的含水洞穴，建议将**AquiferFloodLevelFloodness**设置为**大于某值**，并为其设置一个较高的值（如0.5或0.7）。
+
+**检查高度范围**：您可以通过编辑**范围坐标**来设置高度检查的范围。其格式为 **“minX minZ maxX maxZ”**。这些坐标是相对于您的筛选坐标的。例如，如果您将其设置为“-5 -3 5 3”，而您的筛选坐标设置为（X，Z），则它将检查从（X-5，Z-3）到（X+5，Z+3）的坐标范围内的高度。**这些坐标是精确坐标，而不是方块坐标，因此，如果您需要在方块坐标（X-5，Z-3）到（X+5，Z+3）的范围内筛选高度，则应将其设置为“-5 -3 6 4”。** 您只能将范围坐标设置在±16格以内。您可以将**范围高度类型**设置为检查范围内的最低、平均或最高高度。
+
 接下来是**筛选模式**区域：
 
 **递增模式**：根据“种子输入”区的种子范围进行递增搜索
 
 **列表筛选**：基于种子列表进行搜索，支持从文件加载列表
 
-**结构种子**：在指定范围/列表内搜索种子及其姐妹种子（低48位二进制相同，高16位二进制不同，共65536个）。姐妹种子具有相同的结构坐标和近乎一致的下界/末地维度。若需筛选在洞穴中的结构（如村庄、前哨站、雪屋），推荐使用此模式（可先用 cubiomes-viewer 筛选含目标结构的低48位种子，再导入本程序处理）
+**结构种子（低48位二进制）**：在指定范围/列表内搜索种子及其姐妹种子（低48位二进制相同，高16位二进制不同，共65536个）。姐妹种子具有相同的结构坐标和近乎一致的下界/末地维度。若需筛选在洞穴中的结构（如村庄、前哨站、雪屋），推荐使用此模式（可先用 cubiomes-viewer 筛选含目标结构的低48位种子，再导入本程序处理）
 
 **世界种子**：仅搜索指定范围/列表内的原始种子
 
@@ -151,9 +167,9 @@ https://github.com/KalleStruik
 
 右上角区域是**群系气候参数**。
 
-它包含8种类型。**Temperature、Humidity、Erosion、Ridge(Weirdness)、Continentalness** 决定了生物群系的生成。如果你想在特定的生物群系中寻找露天洞穴，最好筛选这些群系气候参数。程序会按照从最快到最慢的顺序进行搜索（Temperature、Humidity、Erosion 和 Ridge(Weirdness) 的检查速度比完整的洞穴入口检查更快，尽管Erosion 和 Weirdness 仍然比 Entrance1 慢）。你可以在Minecraft Wiki上搜索你所需生物群系的气候参数条件。结构的生成也取决于生物群系。Weirdness在-0.05到0.05之间通常代表河流，Continentalness低于-0.19代表海洋，为了更好地避开含水洞穴，我的默认设置会排除 Weirdness在-0.16到0.16之间的区间，且排除Continentalness低于-0.11的区间。
+它包含8种类型。**温度、湿度、侵蚀度、奇异性、大陆性** 决定了生物群系的生成。如果你想在特定的生物群系中寻找露天洞穴，最好筛选这些群系气候参数。程序会按照从最快到最慢的顺序进行搜索（温度、湿度、侵蚀度和奇异性的检查速度比完整的洞穴入口检查更快，尽管侵蚀度和奇异性仍然比Entrance1慢）。你可以在Minecraft Wiki上搜索你所需生物群系的气候参数条件。结构的生成也取决于生物群系。Weirdness在-0.05到0.05之间通常代表河流，Continentalness低于-0.19代表海洋，如果你想筛选非含水洞穴，建议像默认设置那样排除奇异性在-0.16到0.16之间的区间，且排除大陆性低于-0.11的区间。
 
-**Entrance、Cheese 和 AquiferFloodlevelFloodness** 并非生物群系气候参数，但它们仍在这个区域里面，用于高级搜索。通常，Entrance 和 Cheese 小于 0 表示有洞穴，而 99% 的非含水露天洞穴生成在 AquiferFloodlevelFloodness 低于 0.4 的位置。较低的 Entrance 和 Cheese 值可能意味着更大的洞穴，而较低的 AquiferFloodlevelFloodness 值可能意味着洞穴含水的几率更低。
+**洞穴入口噪声、芝士洞穴噪声和含水层洪水水位噪声** 并非生物群系气候参数，但它们仍在这个区域里面，用于高级搜索。通常，洞穴入口噪声和芝士洞穴噪声小于0代表有洞穴，而99%的非含水露天洞穴生成在含水层洪水水位噪声低于 0.4 的位置。较低的洞穴入口噪声和芝士洞穴噪声值可能意味着更大的洞穴，而较低的含水层洪水水位噪声值可能意味着洞穴含水的几率更低。
 
 右下角部分是**日志**，它在搜索过程中显示信息。
 
